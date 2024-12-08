@@ -2,12 +2,14 @@ import os
 import json
 import eventlet
 import re
+import peppi_py
 
 eventlet.monkey_patch()
 
 from datetime import datetime
 from typing import List, Tuple
 from slippi import Game, id
+from peppi_py import read_slippi, read_peppi
 from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO, emit
 
@@ -20,7 +22,7 @@ tiers = {}
 with open("tier_list.json", "r") as file:
     tiers = json.load(file)
 
-player_ports = {"P1": 2, "P2": 3}
+player_ports = {"P1": 2, "P2": 4}
 
 
 ### Routing
@@ -38,6 +40,25 @@ def reset_tier_list():
 
     with open("tier_list.json", "w") as file:
         json.dump(tiers, file)
+
+
+@app.route("/recalculate", methods=["POST"])
+def recalculate_tier_list():
+    global tiers
+    with open("tier_list.json.base", "r") as file:
+        tiers = json.load(file)
+
+    for file in set(os.listdir(slippi_directory)):
+        try:
+            result = parse_replay(os.path.join(slippi_directory, file))
+            if result:
+                # TODO: fixme
+                update_tiers(
+                    result[player_ports["P1"] - 1],
+                    result[player_ports["P2"] - 1],
+                )
+        except Exception as e:
+            print(f"Failed to parse file {file} in recalculation: {e}")
 
 
 @app.route("/port", methods=["GET"])
@@ -71,29 +92,38 @@ def handle_connect():
 
 
 ### Logic
-def update_tiers(p1: Tuple[id.CSSCharacter, int], p2: Tuple[id.CSSCharacter, int]):
+def update_tiers(p1: dict[id.CSSCharacter, bool], p2: dict[id.CSSCharacter, bool]):
     global tiers, socketio
-    p1_character, p1_stocks = p1
-    p2_character, p2_stocks = p2
-    p1_rating = tiers["P1"][p1_character]
-    p2_rating = tiers["P2"][p2_character]
-    p1_expected = 1.0 / (1.0 + pow(10, ((p1_rating - p2_rating) / 400)))
-    p2_expected = 1.0 / (1.0 + pow(10, ((p2_rating - p1_rating) / 400)))
+    p1_char = tiers["P1"][p1["character"]]
+    p2_char = tiers["P2"][p2["character"]]
+    p1_rating = p1_char["elo"]
+    p2_rating = p2_char["elo"]
 
-    if p1_stocks - p2_stocks == 0:
-        return
+    print(p1, p1_char, p2, p2_char)
 
-    tiers["P1"][p1_character] = p1_rating + 100 * (
-        int(p1_stocks - p2_stocks > 0) - p1_expected
+    E_p = lambda R_a, R_b: 1.0 / (1.0 + pow(10, ((R_b - R_a) / 400)))
+    R_n = lambda R, K, S, E: R + K * (S - E)
+    K = lambda m: max(1000 / 2**m, 100)
+
+    p1_char["elo"] = R_n(
+        p1_rating,
+        K(p1_char["matches"]),
+        int(p1["won"]),
+        E_p(p1_rating, p2_rating),
     )
-    tiers["P2"][p2_character] = p2_rating + 100 * (
-        int(p2_stocks - p1_stocks > 0) - p2_expected
+    p2_char["elo"] = R_n(
+        p2_rating,
+        K(p2_char["matches"]),
+        int(p2["won"]),
+        E_p(p2_rating, p1_rating),
     )
+    p1_char["matches"] += 1
+    p2_char["matches"] += 1
 
     with open("tier_list.json", "w") as file:
         json.dump(tiers, file)
 
-    print(tiers)
+    print(p1, p1_char, p2, p2_char)
     socketio.emit("tier_update", elo_to_tiers(tiers))
 
 
@@ -101,7 +131,8 @@ def elo_to_tiers(tiers):
     tier_list = {}
     for player, characters in tiers.items():
         tier_list[player] = {"S": [], "A": [], "B": [], "C": [], "D": [], "F": []}
-        for i, rating in enumerate(characters):
+        for i, character in enumerate(characters):
+            rating = character["elo"]
             tier = ""
             if rating >= 2500:
                 tier = "S"
@@ -120,12 +151,12 @@ def elo_to_tiers(tiers):
                 {"name": id.CSSCharacter(i).name, "rating": rating}
             )
 
-    print(tier_list)
+    # print(tier_list)
     return tier_list
 
 
 def find_replay_directory():
-    # return "C:\\Users\\Lahela\\Documents\\Slippi\\test"
+    return "C:\\Users\\Lahela\\Documents\\Slippi\\test"
     base_path = "C:\\Users"
     user_dirs = [
         os.path.join(base_path, user)
@@ -178,28 +209,43 @@ def detect_new_files(directory) -> str:
 
 def parse_replay(file_path: str) -> List[Tuple[id.CSSCharacter, int]]:
     try:
-        game = Game(file_path)
+        game = read_slippi(file_path, skip_frames=True)
+        # print(game)
+        if game.metadata["lastFrame"] / 60 < 30:
+            raise Exception("Game too short")
 
-        print(game)
-        if game.metadata.duration / 60 < 30:
-            print("Game too short")
-            return None
+        players = {}
+        for player in game.start.players:
+            if player.type != 0:
+                raise Exception("Non human player")
 
-        chars = [p.character if p else None for p in game.start.players]
+            players[player.port.value] = {
+                "character": id.CSSCharacter(player.character),
+            }
+
         # If zelda or sheik get the character from the last frame.
-        for i, p in enumerate(chars):
-            if p == id.CSSCharacter.ZELDA or p == id.CSSCharacter.SHEIK:
-                chars[i] = id.CSSCharacter[
-                    game.frames[-1].ports[i].leader.post.character.name
+        for port, player in players.items():
+            if (
+                player["character"] == id.CSSCharacter.ZELDA
+                or player == id.CSSCharacter.SHEIK
+            ):
+                chars = game.metadata["players"][str(port)]["characters"]
+                most_played = ("", 0)
+                for c, frames in chars.items():
+                    if frames > most_played[1]:
+                        most_played = (c, frames)
+                player["character"] = id.CSSCharacter[
+                    id.InGameCharacter(int(most_played[0])).name
                 ]
 
-        stocks = [100] * 4
-        for frame in game.frames:
-            for i, port in enumerate(frame.ports):
-                if port:
-                    stocks[i] = min(stocks[i], port.leader.post.stocks)
+        # Quitter loses
+        for player in game.end.players:
+            if game.end.lras_initiator != None:
+                players[player.port]["won"] = player.port != game.end.lras_initiator
+            else:
+                players[player.port]["won"] = player.placement == 0
 
-        return list(zip(chars, stocks))
+        return players
 
     except Exception as e:
         print(f"An error occurred while parsing the file: {e}")
@@ -214,13 +260,32 @@ def background_task():
             print(f"Found new replay: {new_file}")
             result = parse_replay(os.path.join(slippi_directory, new_file))
             if result:
+                # TODO: fixme
                 update_tiers(
-                    result[player_ports["P1"] - 1], result[player_ports["P2"] - 1]
+                    result[player_ports["P1"] - 1],
+                    result[player_ports["P2"] - 1],
                 )
 
-        eventlet.sleep(0.1)
+        eventlet.sleep(0.5)
 
 
 if __name__ == "__main__":
+    print("here")
+    # print(
+    #     "slippi",
+    #     read_slippi(
+    #         "C:\\Users\\Lahela\\Documents\\Slippi\\test\\Game_20241207T230621.slp",
+    #         skip_frames=True,
+    #     ),
+    # )
+    # result = parse_replay(
+    #     "C:\\Users\\Lahela\\Documents\\Slippi\\test\\Game_20241207T225154.slp"
+    # )
+    # print(result)
+    # update_tiers(
+    #     result[player_ports["P1"] - 1],
+    #     result[player_ports["P2"] - 1],
+    # )
+    recalculate_tier_list()
     socketio.start_background_task(target=background_task)
     socketio.run(app, debug=True, use_reloader=False)
