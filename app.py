@@ -6,7 +6,7 @@ import eventlet
 eventlet.monkey_patch()
 
 from datetime import datetime
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Union
 from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO, emit
 
@@ -23,10 +23,11 @@ socketio = SocketIO(app)
 TIER_FILE = "tier_list.json"
 TIER_FILE_BASE = "tier_list.json.base"
 MIN_GAME_DURATION_SECONDS = 30
+ALLOW_EXIT = False
 
-tiers = {}
+character_ratings = {}
 with open(TIER_FILE, "r") as file:
-    tiers = json.load(file)
+    character_ratings = json.load(file)
 
 player_ports = {"P1": 2, "P2": 4}
 
@@ -34,43 +35,40 @@ player_ports = {"P1": 2, "P2": 4}
 ### Routing
 @app.route("/")
 def tier_list():
-    global tiers
-    return render_template("index.html", tiers=elo_to_tiers(tiers))
+    global character_ratings
+    return render_template("index.html", tiers=elo_to_tiers(character_ratings))
 
 
 @app.route("/reset", methods=["POST"])
 def reset_tier_list():
-    global tiers
+    global character_ratings
     with open(TIER_FILE_BASE, "r") as file:
-        tiers = json.load(file)
+        character_ratings = json.load(file)
 
     with open(TIER_FILE, "w") as file:
-        json.dump(tiers, file)
+        json.dump(character_ratings, file)
 
-    return jsonify(elo_to_tiers(tiers)), 200
+    return jsonify(elo_to_tiers(character_ratings)), 200
 
 
 @app.route("/recalculate", methods=["POST"])
 def recalculate_tier_list():
-    global tiers
+    global character_ratings
     with open(TIER_FILE_BASE, "r") as file:
-        tiers = json.load(file)
+        character_ratings = json.load(file)
 
     for file in set(os.listdir(slippi_directory)):
         try:
-            result = parse_replay(os.path.join(slippi_directory, file))
-            if not result:
-                continue
-            # TODO: fixme
-            update_tiers(
-                result[player_ports["P1"] - 1],
-                result[player_ports["P2"] - 1],
-            )
+            path = os.path.join(slippi_directory, file)
+            process_replay(path)
         except Exception as e:
             print(f"Failed to parse file {file} in recalculation: {e}")
 
+    with open(TIER_FILE, "w") as file:
+        json.dump(character_ratings, file)
+
     with app.app_context():
-        return jsonify(elo_to_tiers(tiers)), 200
+        return jsonify(elo_to_tiers(character_ratings)), 200
 
 
 @app.route("/port", methods=["GET"])
@@ -100,12 +98,18 @@ def set_port():
 
 @socketio.on("connect")
 def handle_connect():
-    emit("tier_update", elo_to_tiers(tiers))
+    emit("tier_update", elo_to_tiers(character_ratings))
 
 
 ### Logic
-def update_tiers(p1: dict[id.CSSCharacter, bool], p2: dict[id.CSSCharacter, bool]):
-    global tiers, socketio
+def update_tiers(
+    tiers: Dict[str, List[Dict[str, int]]],
+    p1: Dict[id.CSSCharacter, bool],
+    p2: Dict[id.CSSCharacter, bool],
+) -> Dict[str, List[Dict[str, int]]]:
+    if not p1 or not p2:
+        return None
+
     p1_char = tiers["P1"][p1["character"]]
     p2_char = tiers["P2"][p2["character"]]
     p1_rating = p1_char["elo"]
@@ -130,8 +134,12 @@ def update_tiers(p1: dict[id.CSSCharacter, bool], p2: dict[id.CSSCharacter, bool
     p1_char["matches"] += 1
     p2_char["matches"] += 1
 
+    return tiers
 
-def elo_to_tiers(tiers):
+
+def elo_to_tiers(
+    tiers: Dict[str, List[Dict[str, int]]]
+) -> Dict[str, List[Dict[str, Union[str, int]]]]:
     tier_list = {}
     for player, characters in tiers.items():
         tier_list[player] = {"S": [], "A": [], "B": [], "C": [], "D": [], "F": []}
@@ -158,7 +166,8 @@ def elo_to_tiers(tiers):
     return tier_list
 
 
-def find_replay_directory():
+def find_replay_directory() -> str:
+    # return "C:\\Users\\Lahela\\Documents\\Slippi\\test"
     base_path = "C:\\Users"
     user_dirs = [
         os.path.join(base_path, user)
@@ -195,7 +204,7 @@ slippi_directory = find_replay_directory()
 previous_files = set(os.listdir(slippi_directory))
 
 
-def detect_new_files(directory) -> str:
+def detect_new_files(directory: str) -> str:
     global previous_files
 
     current_files = set(os.listdir(directory))
@@ -209,7 +218,7 @@ def detect_new_files(directory) -> str:
     return ""
 
 
-def parse_replay(file_path: str) -> List[Tuple[id.CSSCharacter, int]]:
+def parse_replay(file_path: str) -> Dict[int, Dict[str, Union[id.CSSCharacter, bool]]]:
     try:
         game = read_slippi(file_path, skip_frames=True)
         print(game)
@@ -218,8 +227,8 @@ def parse_replay(file_path: str) -> List[Tuple[id.CSSCharacter, int]]:
 
         players = {}
         for player in game.start.players:
-            if player.type != 0:
-                raise Exception("Non human player")
+            # if player.type != 0:
+            #     raise Exception("Non human player")
 
             players[player.port.value] = {
                 "character": id.CSSCharacter(player.character),
@@ -240,6 +249,9 @@ def parse_replay(file_path: str) -> List[Tuple[id.CSSCharacter, int]]:
                     id.InGameCharacter(int(most_played[0])).name
                 ]
 
+        if not ALLOW_EXIT and game.end.method == 7:
+            raise Exception("Game exited")
+
         # Quitter loses
         for player in game.end.players:
             if game.end.lras_initiator != None:
@@ -247,6 +259,7 @@ def parse_replay(file_path: str) -> List[Tuple[id.CSSCharacter, int]]:
             else:
                 players[player.port]["won"] = player.placement == 0
 
+        print(players)
         return players
 
     except Exception as e:
@@ -254,7 +267,7 @@ def parse_replay(file_path: str) -> List[Tuple[id.CSSCharacter, int]]:
         return None
 
 
-def is_file_locked(file_path):
+def is_file_locked(file_path: str) -> bool:
     try:
         handle = win32file.CreateFile(
             file_path,
@@ -271,27 +284,39 @@ def is_file_locked(file_path):
         return True
 
 
-def background_task():
+def process_replay(path: str) -> None:
+    global character_ratings
+    result = parse_replay(path)
+    if not result:
+        return None
+
+    new_tiers = update_tiers(
+        character_ratings,
+        result.get(player_ports["P1"] - 1),
+        result.get(player_ports["P2"] - 1),
+    )
+
+    if new_tiers:
+        character_ratings = new_tiers
+
+
+def background_task() -> None:
     print(f"Watching directory: {slippi_directory}")
+    global character_ratings
     while True:
         new_file = detect_new_files(slippi_directory)
         if new_file != "":
             print(f"Found new replay: {new_file}")
+
             path = os.path.join(slippi_directory, new_file)
             while is_file_locked(path):
                 eventlet.sleep(0.5)
-            result = parse_replay(path)
-            if not result:
-                continue
-            # TODO: fixme
-            update_tiers(
-                result[player_ports["P1"] - 1],
-                result[player_ports["P2"] - 1],
-            )
-            with open(TIER_FILE, "w") as file:
-                json.dump(tiers, file)
 
-            socketio.emit("tier_update", elo_to_tiers(tiers))
+            process_replay(path)
+            with open(TIER_FILE, "w") as file:
+                json.dump(character_ratings, file)
+
+            socketio.emit("tier_update", elo_to_tiers(character_ratings))
 
         eventlet.sleep(0.5)
 
