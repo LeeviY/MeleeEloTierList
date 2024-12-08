@@ -1,17 +1,19 @@
 import os
 import json
-import eventlet
 import re
-import peppi_py
+import eventlet
 
 eventlet.monkey_patch()
 
 from datetime import datetime
 from typing import List, Tuple
-from slippi import Game, id
-from peppi_py import read_slippi, read_peppi
 from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO, emit
+
+import win32file
+import peppi_py
+from slippi import Game, id
+from peppi_py import read_slippi, read_peppi
 
 
 app = Flask(__name__)
@@ -103,7 +105,7 @@ def update_tiers(p1: dict[id.CSSCharacter, bool], p2: dict[id.CSSCharacter, bool
 
     E_p = lambda R_a, R_b: 1.0 / (1.0 + pow(10, ((R_b - R_a) / 400)))
     R_n = lambda R, K, S, E: R + K * (S - E)
-    K = lambda m: max(1000 / 2**m, 100)
+    K = lambda m: max(1000 / 1.25**m, 100)
 
     p1_char["elo"] = R_n(
         p1_rating,
@@ -151,12 +153,10 @@ def elo_to_tiers(tiers):
                 {"name": id.CSSCharacter(i).name, "rating": rating}
             )
 
-    # print(tier_list)
     return tier_list
 
 
 def find_replay_directory():
-    return "C:\\Users\\Lahela\\Documents\\Slippi\\test"
     base_path = "C:\\Users"
     user_dirs = [
         os.path.join(base_path, user)
@@ -210,7 +210,7 @@ def detect_new_files(directory) -> str:
 def parse_replay(file_path: str) -> List[Tuple[id.CSSCharacter, int]]:
     try:
         game = read_slippi(file_path, skip_frames=True)
-        # print(game)
+        print(game)
         if game.metadata["lastFrame"] / 60 < 30:
             raise Exception("Game too short")
 
@@ -252,13 +252,33 @@ def parse_replay(file_path: str) -> List[Tuple[id.CSSCharacter, int]]:
         return None
 
 
+def is_file_locked(file_path):
+    try:
+        handle = win32file.CreateFile(
+            file_path,
+            win32file.GENERIC_READ,
+            win32file.FILE_SHARE_READ,
+            None,
+            win32file.OPEN_EXISTING,
+            0,
+            None,
+        )
+        win32file.CloseHandle(handle)
+        return False
+    except Exception:
+        return True
+
+
 def background_task():
     print(f"Watching directory: {slippi_directory}")
     while True:
         new_file = detect_new_files(slippi_directory)
         if new_file != "":
             print(f"Found new replay: {new_file}")
-            result = parse_replay(os.path.join(slippi_directory, new_file))
+            path = os.path.join(slippi_directory, new_file)
+            while is_file_locked(path):
+                eventlet.sleep(0.5)
+            result = parse_replay(path)
             if result:
                 # TODO: fixme
                 update_tiers(
@@ -270,22 +290,6 @@ def background_task():
 
 
 if __name__ == "__main__":
-    print("here")
-    # print(
-    #     "slippi",
-    #     read_slippi(
-    #         "C:\\Users\\Lahela\\Documents\\Slippi\\test\\Game_20241207T230621.slp",
-    #         skip_frames=True,
-    #     ),
-    # )
-    # result = parse_replay(
-    #     "C:\\Users\\Lahela\\Documents\\Slippi\\test\\Game_20241207T225154.slp"
-    # )
-    # print(result)
-    # update_tiers(
-    #     result[player_ports["P1"] - 1],
-    #     result[player_ports["P2"] - 1],
-    # )
     recalculate_tier_list()
     socketio.start_background_task(target=background_task)
     socketio.run(app, debug=True, use_reloader=False)
