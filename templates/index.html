@@ -5,135 +5,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Tier List Viewer</title>
     <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
-    <style>
-      body {
-        font-family: Arial, sans-serif;
-        background-color: #121212;
-        color: #ffffff;
-        margin: 0;
-        padding: 0;
-      }
-
-      .container {
-        display: flex;
-        flex-direction: row;
-        justify-content: space-evenly;
-        gap: 20px;
-        padding: 20px;
-      }
-
-      .tier-list-container {
-        flex: 1;
-        max-width: 600px;
-      }
-
-      .tier-list-title {
-        text-align: center;
-        font-size: 24px;
-        margin-bottom: 20px;
-      }
-
-      .port-input-container {
-        text-align: center;
-        margin-bottom: 20px;
-      }
-
-      .port-input-container input {
-        padding: 5px;
-        width: 120px;
-      }
-
-      .port-input-container button {
-        padding: 5px 10px;
-        margin-left: 10px;
-      }
-
-      .current-port {
-        text-align: center;
-        margin-top: 10px;
-        color: #00ff00;
-      }
-
-      .tier-list {
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-      }
-
-      .tier {
-        display: flex;
-        align-items: flex-start;
-        gap: 10px;
-        padding: 10px;
-        border-radius: 5px;
-      }
-
-      .tier h2 {
-        margin: 0;
-        flex: 0 0 50px;
-        text-align: center;
-        font-weight: bold;
-      }
-
-      .tier-items {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 10px;
-        flex-grow: 1;
-        min-height: 50px;
-        background: #212121;
-        padding: 10px;
-        border-radius: 5px;
-        overflow-x: auto;
-      }
-
-      .item img {
-        max-width: 100px;
-        max-height: 100px;
-        border-radius: 5px;
-      }
-
-      .item-rating {
-        font-size: 0.8em;
-        text-align: center;
-        margin: 1px 0 0;
-        color: #e0e0e0;
-      }
-
-      .tier-s {
-        background-color: #ff4747;
-      }
-      .tier-a {
-        background-color: #ffa347;
-      }
-      .tier-b {
-        background-color: #ffee47;
-      }
-      .tier-c {
-        background-color: #28da28;
-      }
-      .tier-d {
-        background-color: #4781ff;
-      }
-      .tier-f {
-        background-color: #631b85;
-      }
-    </style>
+    <script src="static/js/scripts.js"></script>
+    <script src="static/js/reset.js"></script>
+    <link rel="stylesheet" href="static/css/styles.css" />
   </head>
   <body>
     <div class="container">
       <!-- Player 1's Tier List -->
       <div class="tier-list-container">
         <h2 class="tier-list-title">Player 1</h2>
-        <div class="port-input-container">
-          <input
-            type="number"
-            id="port-p1"
-            placeholder="Enter port for P1"
-            onchange="setPort('P1')"
-            min="1"
-            max="4"
-          />
+        <div class="port-buttons-container" id="port-buttons-p1">
+          <button onclick="handlePortClick('P1', 1, this)">1</button>
+          <button onclick="handlePortClick('P1', 2, this)">2</button>
+          <button onclick="handlePortClick('P1', 3, this)">3</button>
+          <button onclick="handlePortClick('P1', 4, this)">4</button>
         </div>
         <div class="tier-list" id="tier-list-p1">
           <!-- Dynamic content for P1 -->
@@ -143,108 +28,20 @@
       <!-- Player 2's Tier List -->
       <div class="tier-list-container">
         <h2 class="tier-list-title">Player 2</h2>
-        <div class="port-input-container">
-          <input
-            type="number"
-            id="port-p2"
-            placeholder="Enter port for P2"
-            onchange="setPort('P2')"
-            min="1"
-            max="4"
-          />
+        <div class="port-buttons-container" id="port-buttons-p2">
+          <button onclick="handlePortClick('P2', 1, this)">1</button>
+          <button onclick="handlePortClick('P2', 2, this)">2</button>
+          <button onclick="handlePortClick('P2', 3, this)">3</button>
+          <button onclick="handlePortClick('P2', 4, this)">4</button>
         </div>
         <div class="tier-list" id="tier-list-p2">
           <!-- Dynamic content for P2 -->
         </div>
       </div>
     </div>
-
-    <script>
-      const socket = io.connect("http://127.0.0.1:5000");
-
-      function renderPlayerTierList(playerId, tiers) {
-        const tierListContainer = document.getElementById(playerId);
-        tierListContainer.innerHTML = "";
-
-        for (const [tier, items] of Object.entries(tiers)) {
-          const tierDiv = document.createElement("div");
-          tierDiv.classList.add("tier", `tier-${tier.toLowerCase()}`);
-
-          const tierTitle = document.createElement("h2");
-          tierTitle.textContent = `${tier} Tier`;
-          tierDiv.appendChild(tierTitle);
-
-          const tierItemsContainer = document.createElement("div");
-          tierItemsContainer.classList.add("tier-items");
-
-          const sortedItems = items.sort((a, b) => {
-            return b.rating - a.rating;
-          });
-          sortedItems.forEach((item) => {
-            const itemDiv = document.createElement("div");
-            itemDiv.classList.add("item");
-            const img = document.createElement("img");
-            img.src = `/static/images/${item.name}.png`;
-            itemDiv.appendChild(img);
-            const ratingText = document.createElement("p");
-            ratingText.classList.add("item-rating");
-            ratingText.textContent = Math.round(item.rating);
-            itemDiv.appendChild(ratingText);
-            tierItemsContainer.appendChild(itemDiv);
-          });
-
-          tierDiv.appendChild(tierItemsContainer);
-          tierListContainer.appendChild(tierDiv);
-        }
-      }
-
-      function updateData(data) {
-        renderPlayerTierList("tier-list-p1", data.P1);
-        renderPlayerTierList("tier-list-p2", data.P2);
-      }
-
-      function setPort(player) {
-        const portInput = document.getElementById(
-          `port-${player.toLowerCase()}`
-        );
-        const port = portInput.value;
-
-        fetch("/port", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ player, port }),
-        })
-          .then((response) => response.json())
-          .then((data) => {
-            console.log(data.message || data.error);
-          })
-          .catch((err) => console.error("Error:", err));
-      }
-
-      function getPorts() {
-        fetch("/port", {
-          method: "GET",
-        })
-          .then((response) => response.json())
-          .then((data) => {
-            if (data.P1) {
-              const portInput = document.getElementById(`port-p1`);
-              portInput.value = data.P1;
-            }
-            if (data.P2) {
-              const portInput = document.getElementById(`port-p2`);
-              portInput.value = data.P2;
-            }
-          })
-          .catch((err) => console.error("Error:", err));
-      }
-
-      getPorts();
-
-      socket.on("tier_update", function (data) {
-        console.log(data);
-        updateData(data);
-      });
-    </script>
+    <div class="action-buttons">
+      <button onclick="resetTierList()">Reset Tier List</button>
+      <button onclick="recalculateTierList()">Recalculate Tier List</button>
+    </div>
   </body>
 </html>

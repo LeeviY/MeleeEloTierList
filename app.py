@@ -6,7 +6,7 @@ import eventlet
 eventlet.monkey_patch()
 
 from datetime import datetime
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO, emit
 
@@ -17,11 +17,15 @@ from peppi_py import read_slippi, read_peppi
 
 
 app = Flask(__name__)
+app.json.sort_keys = False
 socketio = SocketIO(app)
 
+TIER_FILE = "tier_list.json"
+TIER_FILE_BASE = "tier_list.json.base"
+MIN_GAME_DURATION_SECONDS = 30
 
 tiers = {}
-with open("tier_list.json", "r") as file:
+with open(TIER_FILE, "r") as file:
     tiers = json.load(file)
 
 player_ports = {"P1": 2, "P2": 4}
@@ -37,30 +41,36 @@ def tier_list():
 @app.route("/reset", methods=["POST"])
 def reset_tier_list():
     global tiers
-    with open("tier_list.json.base", "r") as file:
+    with open(TIER_FILE_BASE, "r") as file:
         tiers = json.load(file)
 
-    with open("tier_list.json", "w") as file:
+    with open(TIER_FILE, "w") as file:
         json.dump(tiers, file)
+
+    return jsonify(elo_to_tiers(tiers)), 200
 
 
 @app.route("/recalculate", methods=["POST"])
 def recalculate_tier_list():
     global tiers
-    with open("tier_list.json.base", "r") as file:
+    with open(TIER_FILE_BASE, "r") as file:
         tiers = json.load(file)
 
     for file in set(os.listdir(slippi_directory)):
         try:
             result = parse_replay(os.path.join(slippi_directory, file))
-            if result:
-                # TODO: fixme
-                update_tiers(
-                    result[player_ports["P1"] - 1],
-                    result[player_ports["P2"] - 1],
-                )
+            if not result:
+                continue
+            # TODO: fixme
+            update_tiers(
+                result[player_ports["P1"] - 1],
+                result[player_ports["P2"] - 1],
+            )
         except Exception as e:
             print(f"Failed to parse file {file} in recalculation: {e}")
+
+    with app.app_context():
+        return jsonify(elo_to_tiers(tiers)), 200
 
 
 @app.route("/port", methods=["GET"])
@@ -101,8 +111,6 @@ def update_tiers(p1: dict[id.CSSCharacter, bool], p2: dict[id.CSSCharacter, bool
     p1_rating = p1_char["elo"]
     p2_rating = p2_char["elo"]
 
-    print(p1, p1_char, p2, p2_char)
-
     E_p = lambda R_a, R_b: 1.0 / (1.0 + pow(10, ((R_b - R_a) / 400)))
     R_n = lambda R, K, S, E: R + K * (S - E)
     K = lambda m: max(1000 / 1.25**m, 100)
@@ -121,12 +129,6 @@ def update_tiers(p1: dict[id.CSSCharacter, bool], p2: dict[id.CSSCharacter, bool
     )
     p1_char["matches"] += 1
     p2_char["matches"] += 1
-
-    with open("tier_list.json", "w") as file:
-        json.dump(tiers, file)
-
-    print(p1, p1_char, p2, p2_char)
-    socketio.emit("tier_update", elo_to_tiers(tiers))
 
 
 def elo_to_tiers(tiers):
@@ -211,7 +213,7 @@ def parse_replay(file_path: str) -> List[Tuple[id.CSSCharacter, int]]:
     try:
         game = read_slippi(file_path, skip_frames=True)
         print(game)
-        if game.metadata["lastFrame"] / 60 < 30:
+        if game.metadata["lastFrame"] / 60 < MIN_GAME_DURATION_SECONDS:
             raise Exception("Game too short")
 
         players = {}
@@ -279,12 +281,17 @@ def background_task():
             while is_file_locked(path):
                 eventlet.sleep(0.5)
             result = parse_replay(path)
-            if result:
-                # TODO: fixme
-                update_tiers(
-                    result[player_ports["P1"] - 1],
-                    result[player_ports["P2"] - 1],
-                )
+            if not result:
+                continue
+            # TODO: fixme
+            update_tiers(
+                result[player_ports["P1"] - 1],
+                result[player_ports["P2"] - 1],
+            )
+            with open(TIER_FILE, "w") as file:
+                json.dump(tiers, file)
+
+            socketio.emit("tier_update", elo_to_tiers(tiers))
 
         eventlet.sleep(0.5)
 
