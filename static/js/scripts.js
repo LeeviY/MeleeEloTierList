@@ -107,6 +107,26 @@ async function fetchPorts() {
   }
 }
 
+let ALLOW_EXIT = true;
+function toggleAllowExit() {
+  fetch("/allow_exit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ value: !ALLOW_EXIT }),
+  })
+    .then((response) => response.json())
+    .then((data) => {
+      ALLOW_EXIT = !ALLOW_EXIT;
+      document.getElementById(
+        "allow-exit-button"
+      ).innerText = `Allow Quitting: ${ALLOW_EXIT}`;
+      console.log(data);
+    })
+    .catch((err) => {
+      console.error(err);
+    });
+}
+
 function resetTierList() {
   if (confirm("Are you sure you want to reset the tier list?")) {
     fetch("/reset", {

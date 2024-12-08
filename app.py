@@ -96,6 +96,14 @@ def set_port():
         return jsonify({"error": "Player not found"}), 404
 
 
+@app.route("/allow_exit", methods=["POST"])
+def set_qutting():
+    global ALLOW_EXIT
+    data = request.json
+    ALLOW_EXIT = data.get("value")
+    return jsonify({"message": f"Allowing exit set to {ALLOW_EXIT}"}), 200
+
+
 @socketio.on("connect")
 def handle_connect():
     emit("tier_update", elo_to_tiers(character_ratings))
@@ -322,6 +330,6 @@ def background_task() -> None:
 
 
 if __name__ == "__main__":
-    recalculate_tier_list()
+    # recalculate_tier_list()
     socketio.start_background_task(target=background_task)
     socketio.run(app, debug=True, use_reloader=False)
