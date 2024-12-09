@@ -2,6 +2,9 @@ import os
 import json
 import re
 import eventlet
+import sys
+import contextlib
+
 
 eventlet.monkey_patch()
 
@@ -30,6 +33,9 @@ with open(TIER_FILE, "r") as file:
     character_ratings = json.load(file)
 
 player_ports = {"P1": 2, "P2": 4}
+players_codes = {"P1": "LY＃863", "P2": "KEKW＃849"}
+
+EXTRA_DIRS = ["C:\\Users\\Leevi\\projects\\Python\\MeleeEloTierList\\2024-12"]
 
 
 ### Routing
@@ -53,16 +59,38 @@ def reset_tier_list():
 
 @app.route("/recalculate", methods=["POST"])
 def recalculate_tier_list():
-    global character_ratings
+    global character_ratings, slippi_directory
     with open(TIER_FILE_BASE, "r") as file:
         character_ratings = json.load(file)
 
-    for file in set(os.listdir(slippi_directory)):
-        try:
-            path = os.path.join(slippi_directory, file)
-            process_replay(path)
-        except Exception as e:
-            print(f"Failed to parse file {file} in recalculation: {e}")
+    date_pattern = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
+
+    replay_dirs = [
+        os.path.join(slippi_directory, month)
+        for month in os.listdir(slippi_directory)
+        if os.path.isdir(os.path.join(slippi_directory, month))
+        and date_pattern.match(month)
+    ]
+
+    replay_dirs += EXTRA_DIRS
+
+    for dir in replay_dirs:
+        for file in os.listdir(dir):
+            try:
+                path = os.path.join(dir, file)
+                process_replay(path)
+            except Exception as e:
+                print(f"Failed to parse file {file} in recalculation: {e}")
+
+    count_1 = 0
+    for character in character_ratings["P1"]:
+        count_1 += character["matches"]
+
+    count_2 = 0
+    for character in character_ratings["P2"]:
+        count_2 += character["matches"]
+
+    print(count_1, count_2)
 
     with open(TIER_FILE, "w") as file:
         json.dump(character_ratings, file)
@@ -74,7 +102,6 @@ def recalculate_tier_list():
 @app.route("/port", methods=["GET"])
 def get_port():
     global player_ports
-    print(player_ports)
     return jsonify(player_ports), 200
 
 
@@ -125,7 +152,7 @@ def update_tiers(
 
     E_p = lambda R_a, R_b: 1.0 / (1.0 + pow(10, ((R_b - R_a) / 400)))
     R_n = lambda R, K, S, E: R + K * (S - E)
-    K = lambda m: max(1000 / 1.25**m, 100)
+    K = lambda m: max(800 / (m + 1), 100)
 
     p1_char["elo"] = R_n(
         p1_rating,
@@ -154,28 +181,31 @@ def elo_to_tiers(
         for i, character in enumerate(characters):
             rating = character["elo"]
             tier = ""
-            if rating >= 2500:
+            if rating >= 2000:
                 tier = "S"
-            elif rating >= 2000:
+            elif rating >= 1800:
                 tier = "A"
-            elif rating >= 1500:
+            elif rating >= 1600:
                 tier = "B"
-            elif rating >= 1000:
+            elif rating >= 1400:
                 tier = "C"
-            elif rating >= 500:
+            elif rating >= 1200:
                 tier = "D"
             else:
                 tier = "F"
 
             tier_list[player][tier].append(
-                {"name": id.CSSCharacter(i).name, "rating": rating}
+                {
+                    "name": id.CSSCharacter(i).name,
+                    "rating": rating,
+                    "matches": character["matches"],
+                }
             )
 
     return tier_list
 
 
 def find_replay_directory() -> str:
-    # return "C:\\Users\\Lahela\\Documents\\Slippi\\test"
     base_path = "C:\\Users"
     user_dirs = [
         os.path.join(base_path, user)
@@ -187,9 +217,12 @@ def find_replay_directory() -> str:
     latest_date = None
     latest_dir = None
 
+    slippi_dir = ""
+
     for user_dir in user_dirs:
         slippi_path = os.path.join(user_dir, "Documents", "Slippi")
         if os.path.exists(slippi_path) and os.path.isdir(slippi_path):
+            slippi_dir = slippi_path
             for subdir in os.listdir(slippi_path):
                 if date_pattern.match(subdir):
                     try:
@@ -205,11 +238,11 @@ def find_replay_directory() -> str:
     else:
         print("No valid directories found.")
 
-    return latest_dir
+    return slippi_dir, latest_dir
 
 
-slippi_directory = find_replay_directory()
-previous_files = set(os.listdir(slippi_directory))
+slippi_directory, latest_directory = find_replay_directory()
+previous_files = set(os.listdir(latest_directory))
 
 
 def detect_new_files(directory: str) -> str:
@@ -226,19 +259,23 @@ def detect_new_files(directory: str) -> str:
     return ""
 
 
-def parse_replay(file_path: str) -> Dict[int, Dict[str, Union[id.CSSCharacter, bool]]]:
+def parse_replay(
+    file_path: str, debug_print: bool = False
+) -> Dict[int, Dict[str, Union[id.CSSCharacter, bool]]]:
     try:
         game = read_slippi(file_path, skip_frames=True)
-        print(game)
+        if debug_print:
+            print("Game: ", game)
         if game.metadata["lastFrame"] / 60 < MIN_GAME_DURATION_SECONDS:
             raise Exception("Game too short")
 
         players = {}
         for player in game.start.players:
-            # if player.type != 0:
-            #     raise Exception("Non human player")
+            if player.type != 0:
+                raise Exception("Non human player")
 
             players[player.port.value] = {
+                "code": player.netplay.code,
                 "character": id.CSSCharacter(player.character),
             }
 
@@ -267,7 +304,8 @@ def parse_replay(file_path: str) -> Dict[int, Dict[str, Union[id.CSSCharacter, b
             else:
                 players[player.port]["won"] = player.placement == 0
 
-        print(players)
+        if debug_print:
+            print("Players:", players)
         return players
 
     except Exception as e:
@@ -292,16 +330,36 @@ def is_file_locked(file_path: str) -> bool:
         return True
 
 
-def process_replay(path: str) -> None:
+def process_replay(path: str, debug_print: bool = False) -> None:
     global character_ratings
-    result = parse_replay(path)
-    if not result:
-        return None
+    players = parse_replay(path, debug_print)
+    if not players:
+        return
+
+    player_codes = [x["code"] for x in players.values() if x["code"] != ""]
+
+    if (
+        (not players_codes["P1"] in player_codes)
+        or (not players_codes["P2"] in player_codes)
+    ) and len(player_codes) > 0:
+        return
+
+    get_player_port = lambda players, players_codes, player_key, default_port: next(
+        (
+            key
+            for key, value in players.items()
+            if value["code"] == players_codes[player_key]
+        ),
+        default_port - 1,
+    )
+
+    p1_port = get_player_port(players, players_codes, "P1", player_ports["P1"])
+    p2_port = get_player_port(players, players_codes, "P2", player_ports["P2"])
 
     new_tiers = update_tiers(
         character_ratings,
-        result.get(player_ports["P1"] - 1),
-        result.get(player_ports["P2"] - 1),
+        players.get(p1_port),
+        players.get(p2_port),
     )
 
     if new_tiers:
@@ -309,8 +367,11 @@ def process_replay(path: str) -> None:
 
 
 def background_task() -> None:
-    print(f"Watching directory: {slippi_directory}")
+    print(f"Watching directory: {latest_directory}")
     global character_ratings
+
+    socketio.emit("tier_update", elo_to_tiers(character_ratings))
+
     while True:
         new_file = detect_new_files(slippi_directory)
         if new_file != "":
@@ -320,7 +381,7 @@ def background_task() -> None:
             while is_file_locked(path):
                 eventlet.sleep(0.5)
 
-            process_replay(path)
+            process_replay(path, True)
             with open(TIER_FILE, "w") as file:
                 json.dump(character_ratings, file)
 
@@ -329,7 +390,15 @@ def background_task() -> None:
         eventlet.sleep(0.5)
 
 
+def recalculate_tier_list2(dir):
+    for file in os.listdir(dir):
+        try:
+            path = os.path.join(dir, file)
+            process_replay(path)
+        except Exception as e:
+            print(f"Failed to parse file {file} in recalculation: {e}")
+
+
 if __name__ == "__main__":
-    # recalculate_tier_list()
     socketio.start_background_task(target=background_task)
     socketio.run(app, debug=True, use_reloader=False)

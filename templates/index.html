@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
+
+<head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Tier List Viewer</title>
@@ -8,43 +9,45 @@
     <script src="static/js/scripts.js"></script>
     <script src="static/js/reset.js"></script>
     <link rel="stylesheet" href="static/css/styles.css" />
-  </head>
-  <body>
-    <div class="container">
-      <!-- Player 1's Tier List -->
-      <div class="tier-list-container">
-        <h2 class="tier-list-title">Player 1</h2>
-        <div class="port-buttons-container" id="port-buttons-p1">
-          <button onclick="handlePortClick('P1', 1, this)">1</button>
-          <button onclick="handlePortClick('P1', 2, this)">2</button>
-          <button onclick="handlePortClick('P1', 3, this)">3</button>
-          <button onclick="handlePortClick('P1', 4, this)">4</button>
-        </div>
-        <div class="tier-list" id="tier-list-p1">
-          <!-- Dynamic content for P1 -->
-        </div>
-      </div>
+</head>
 
-      <!-- Player 2's Tier List -->
-      <div class="tier-list-container">
-        <h2 class="tier-list-title">Player 2</h2>
-        <div class="port-buttons-container" id="port-buttons-p2">
-          <button onclick="handlePortClick('P2', 1, this)">1</button>
-          <button onclick="handlePortClick('P2', 2, this)">2</button>
-          <button onclick="handlePortClick('P2', 3, this)">3</button>
-          <button onclick="handlePortClick('P2', 4, this)">4</button>
+<body>
+    <div class="container">
+        <!-- Player 1's Tier List -->
+        <div class="tier-list-container">
+            <h2 class="tier-list-title">Player 1</h2>
+            <div class="port-buttons-container" id="port-buttons-p1">
+                <button onclick="handlePortClick('P1', 1, this)">1</button>
+                <button onclick="handlePortClick('P1', 2, this)">2</button>
+                <button onclick="handlePortClick('P1', 3, this)">3</button>
+                <button onclick="handlePortClick('P1', 4, this)">4</button>
+            </div>
+            <div class="tier-list" id="tier-list-p1">
+                <!-- Dynamic content for P1 -->
+            </div>
         </div>
-        <div class="tier-list" id="tier-list-p2">
-          <!-- Dynamic content for P2 -->
+
+        <!-- Player 2's Tier List -->
+        <div class="tier-list-container">
+            <h2 class="tier-list-title">Player 2</h2>
+            <div class="port-buttons-container" id="port-buttons-p2">
+                <button onclick="handlePortClick('P2', 1, this)">1</button>
+                <button onclick="handlePortClick('P2', 2, this)">2</button>
+                <button onclick="handlePortClick('P2', 3, this)">3</button>
+                <button onclick="handlePortClick('P2', 4, this)">4</button>
+            </div>
+            <div class="tier-list" id="tier-list-p2">
+                <!-- Dynamic content for P2 -->
+            </div>
         </div>
-      </div>
     </div>
     <div class="action-buttons">
-      <button id="allow-exit-button" onclick="toggleAllowExit()">
-        Allow Quitting: true
-      </button>
-      <button onclick="resetTierList()">Reset Tier List</button>
-      <button onclick="recalculateTierList()">Recalculate Tier List</button>
+        <button id="allow-exit-button" onclick="toggleAllowExit()">
+            Allow Quitting: false
+        </button>
+        <button onclick="resetTierList()">Reset Tier List</button>
+        <button onclick="recalculateTierList()">Recalculate Tier List</button>
     </div>
-  </body>
+</body>
+
 </html>
