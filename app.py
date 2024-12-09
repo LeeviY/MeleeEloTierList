@@ -35,7 +35,7 @@ with open(TIER_FILE, "r") as file:
 player_ports = {"P1": 2, "P2": 4}
 players_codes = {"P1": "LY＃863", "P2": "KEKW＃849"}
 
-EXTRA_DIRS = ["C:\\Users\\Leevi\\projects\\Python\\MeleeEloTierList\\2024-12"]
+EXTRA_DIRS = [f"{os.path.dirname(os.path.abspath(__file__))}\\2024-12"]
 
 
 ### Routing
