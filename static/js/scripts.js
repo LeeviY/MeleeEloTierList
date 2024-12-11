@@ -1,4 +1,6 @@
-document.addEventListener("DOMContentLoaded", fetchPorts);
+document.addEventListener("DOMContentLoaded", () => {
+    fetchPorts();
+});
 
 const socket = io.connect("http://127.0.0.1:5000");
 socket.on("tier_update", function (data) {
@@ -10,6 +12,12 @@ function updateData(data) {
     console.log(data);
     renderPlayerTierList("tier-list-p1", data.P1);
     renderPlayerTierList("tier-list-p2", data.P2);
+    alignTiers(
+        Object.keys(data.P1).map(
+            Function.prototype.call,
+            String.prototype.toLowerCase
+        )
+    );
 }
 
 function renderPlayerTierList(playerId, tiers) {
@@ -48,6 +56,30 @@ function renderPlayerTierList(playerId, tiers) {
         tierDiv.appendChild(tierItemsContainer);
         tierListContainer.appendChild(tierDiv);
     }
+}
+
+function alignTiers(tierNames) {
+    if (!tierNames) {
+        console.error("missing tier names for alignment");
+    }
+    tierNames.forEach((tierName) => {
+        const tiers = document.querySelectorAll(`.tier.tier-${tierName}`);
+        console.log(tiers);
+
+        let maxHeight = 0;
+        tiers.forEach((tier) => {
+            const height = tier.querySelector(".tier-items").scrollHeight;
+            if (height > maxHeight) {
+                maxHeight = height;
+            }
+        });
+
+        tiers.forEach((tier) => {
+            tier.querySelector(
+                ".tier-items"
+            ).style.minHeight = `${maxHeight}px`;
+        });
+    });
 }
 
 let selectedPorts = { P1: null, P2: null };
