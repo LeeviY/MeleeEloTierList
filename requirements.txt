@@ -1,4 +1,6 @@
 eventlet
 flask
 flask-socketio
+py-slippi
 peppi-py
+pywin32

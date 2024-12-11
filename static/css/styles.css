@@ -1,0 +1,149 @@
+body {
+    font-family: Arial, sans-serif;
+    background-color: #121212;
+    color: #ffffff;
+    margin: 0;
+    padding: 0;
+}
+
+.container {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-evenly;
+    gap: 20px;
+    padding: 20px;
+}
+
+.tier-list-container {
+    flex: 1;
+    max-width: 600px;
+}
+
+.tier-list-title {
+    text-align: center;
+    font-size: 24px;
+    margin-bottom: 20px;
+}
+
+.port-buttons-container {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin: 10px 0;
+}
+
+.port-buttons-container button {
+    background-color: #4781ff5b;
+    color: #ffffff;
+    padding: 8px 12px;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background-color 0.3s ease;
+}
+
+.port-buttons-container button:hover {
+    background-color: #3567cc;
+}
+
+.port-buttons-container button.active {
+    background-color: #4781ff;
+}
+
+.action-buttons {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.action-buttons button {
+    background-color: #4781ff;
+    color: #ffffff;
+    padding: 10px 15px;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 16px;
+    transition: background-color 0.3s ease;
+}
+
+.action-buttons button:hover {
+    background-color: #3567cc;
+}
+
+.current-port {
+    text-align: center;
+    margin-top: 10px;
+    color: #00ff00;
+}
+
+.tier-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.tier {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px;
+    border-radius: 5px;
+}
+
+.tier h2 {
+    margin: 0;
+    flex: 0 0 50px;
+    text-align: center;
+    font-weight: bold;
+}
+
+.tier-items {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    flex-grow: 1;
+    min-height: 50px;
+    background: #212121;
+    padding: 10px;
+    border-radius: 5px;
+    overflow-x: auto;
+}
+
+.item img {
+    max-width: 100px;
+    max-height: 100px;
+    min-width: 50px;
+    min-height: 50px;
+    border-radius: 5px;
+}
+
+.item-rating {
+    font-size: 0.8em;
+    text-align: center;
+    margin: 1px 0 0;
+    color: #e0e0e0;
+}
+
+.tier-s {
+    background-color: #ff4747;
+}
+.tier-a {
+    background-color: #ffa347;
+}
+.tier-b {
+    background-color: #ffee47;
+}
+.tier-c {
+    background-color: #28da28;
+}
+.tier-d {
+    background-color: #4781ff;
+}
+.tier-f {
+    background-color: #631b85;
+}
