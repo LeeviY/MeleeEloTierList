@@ -4,10 +4,13 @@ import re
 import eventlet
 import sys
 import contextlib
-
+import pandas as pd
+import numpy as np
+import traceback
 
 eventlet.monkey_patch()
 
+from pprint import pprint
 from datetime import datetime
 from typing import List, Tuple, Dict, Union
 from flask import Flask, render_template, request, jsonify
@@ -27,6 +30,33 @@ TIER_FILE = "tier_list.json"
 TIER_FILE_BASE = "tier_list.json.base"
 MIN_GAME_DURATION_SECONDS = 30
 ALLOW_EXIT = False
+EXTRA_DIRS = [f"{os.path.dirname(os.path.abspath(__file__))}\\2024-12"]
+
+games_df = pd.DataFrame(
+    columns=[
+        "stage",
+        "p1_code",
+        "p1_port",
+        "p1_character",
+        "p1_stocks",
+        "p2_code",
+        "p2_port",
+        "p2_character",
+        "p2_stocks",
+        "end_type",
+        "lras_initiator",
+        "p1_won",
+        "p2_won",
+        "datetime",
+        "frames",
+    ]
+)
+games_df = games_df.set_index("datetime")
+games_df = pd.read_pickle("db.pkl")
+games_df = games_df.sort_index()
+
+print(games_df)
+last_results = [None] * 10
 
 character_ratings = {}
 with open(TIER_FILE, "r") as file:
@@ -35,10 +65,12 @@ with open(TIER_FILE, "r") as file:
 player_ports = {"P1": 2, "P2": 4}
 players_codes = {"P1": "LY＃863", "P2": "KEKW＃849"}
 
-EXTRA_DIRS = [f"{os.path.dirname(os.path.abspath(__file__))}\\2024-12"]
 
-
-LAST_RESULTS = [None] * 10
+### TODO:
+# parse replays to db file
+# add stock count based tier list
+# add matchup chart
+# refactor tier list html to use templates
 
 
 ### Routing
@@ -66,24 +98,8 @@ def recalculate_tier_list():
     with open(TIER_FILE_BASE, "r") as file:
         character_ratings = json.load(file)
 
-    date_pattern = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
-
-    replay_dirs = [
-        os.path.join(slippi_directory, month)
-        for month in os.listdir(slippi_directory)
-        if os.path.isdir(os.path.join(slippi_directory, month))
-        and date_pattern.match(month)
-    ]
-
-    replay_dirs += EXTRA_DIRS
-
-    for dir in replay_dirs:
-        for file in os.listdir(dir):
-            try:
-                path = os.path.join(dir, file)
-                process_replay(path)
-            except Exception as e:
-                print(f"Failed to parse file {file} in recalculation: {e}")
+    for row in games_df.to_dict(orient="records"):
+        process_replay(row)
 
     count_1 = 0
     for character in character_ratings["P1"]:
@@ -98,7 +114,7 @@ def recalculate_tier_list():
     with open(TIER_FILE, "w") as file:
         json.dump(character_ratings, file)
 
-    socketio.emit("results_update", LAST_RESULTS)
+    socketio.emit("results_update", last_results)
     with app.app_context():
         return jsonify(elo_to_tiers(character_ratings)), 200
 
@@ -109,10 +125,10 @@ def get_port():
     return jsonify(player_ports), 200
 
 
-@app.route("/last_results", methods=["GET"])
-def last_results():
-    global LAST_RESULTS
-    return jsonify(LAST_RESULTS), 200
+# @app.route("/last_results", methods=["GET"])
+# def last_results():
+#     global last_results
+#     return jsonify(last_results), 200
 
 
 @app.route("/port", methods=["POST"])
@@ -144,16 +160,16 @@ def set_qutting():
 @socketio.on("connect")
 def handle_connect():
     emit("tier_update", elo_to_tiers(character_ratings))
-    emit("results_update", LAST_RESULTS)
+    emit("results_update", last_results)
 
 
 ### Logic
 def update_tiers(
     tiers: Dict[str, List[Dict[str, int]]],
-    p1: Dict[id.CSSCharacter, bool],
-    p2: Dict[id.CSSCharacter, bool],
+    p1: Dict[str, Union[id.CSSCharacter, bool]],
+    p2: Dict[str, Union[id.CSSCharacter, bool]],
 ) -> Dict[str, List[Dict[str, int]]]:
-    global LAST_RESULTS
+    global last_results
     if not p1 or not p2:
         return None
 
@@ -181,7 +197,7 @@ def update_tiers(
     p1_char["matches"] += 1
     p2_char["matches"] += 1
 
-    LAST_RESULTS.append(
+    last_results.append(
         {
             "P1": {
                 "character": id.CSSCharacter(p1["character"]).name,
@@ -193,7 +209,7 @@ def update_tiers(
             },
         }
     )
-    LAST_RESULTS = LAST_RESULTS[1:]
+    last_results = last_results[1:]
 
     return tiers
 
@@ -289,23 +305,33 @@ def parse_replay(
     file_path: str, debug_print: bool = False
 ) -> Dict[int, Dict[str, Union[id.CSSCharacter, bool]]]:
     try:
-        game = read_slippi(file_path, skip_frames=True)
+        game = read_slippi(file_path, skip_frames=False)
         if debug_print:
-            print("Game: ", game)
-        if game.metadata["lastFrame"] / 60 < MIN_GAME_DURATION_SECONDS:
-            raise Exception("Game too short")
+            print(game)
 
         players = {}
         for player in game.start.players:
             if player.type != 0:
-                raise Exception("Non human player")
+                if debug_print:
+                    print("Non human player")
+                return
 
             players[player.port.value] = {
                 "code": player.netplay.code,
                 "character": id.CSSCharacter(player.character),
             }
 
-        # If zelda or sheik get the character from the last frame.
+        # Check that both players are known.
+        player_codes = [x["code"] for x in players.values() if x["code"] != ""]
+        if (
+            (not players_codes["P1"] in player_codes)
+            or (not players_codes["P2"] in player_codes)
+        ) and len(player_codes) > 0:
+            if debug_print:
+                print("Unknown player")
+            return
+
+        # If zelda or sheik, use the character with more frames.
         for port, player in players.items():
             if (
                 player["character"] == id.CSSCharacter.ZELDA
@@ -320,22 +346,33 @@ def parse_replay(
                     id.InGameCharacter(int(most_played[0])).name
                 ]
 
-        if not ALLOW_EXIT and game.end.method == 7:
-            raise Exception("Game exited")
-
-        # Quitter loses
-        for player in game.end.players:
-            if game.end.lras_initiator != None:
-                players[player.port]["won"] = player.port != game.end.lras_initiator
-            else:
-                players[player.port]["won"] = player.placement == 0
+        # TODO: check if player order is consistant between lists
+        data = {
+            "stage": game.start.stage,
+            "p1_code": game.start.players[0].netplay.code,
+            "p1_port": game.start.players[0].port.value,
+            "p1_character": players[game.start.players[0].port]["character"],
+            "p1_stocks": game.frames.ports[0].leader.post.stocks[-1].as_py(),
+            "p2_code": game.start.players[1].netplay.code,
+            "p2_port": game.start.players[1].port.value,
+            "p2_character": players[game.start.players[1].port]["character"],
+            "p2_stocks": game.frames.ports[1].leader.post.stocks[-1].as_py(),
+            "end_type": game.end.method.value,
+            "lras_initiator": game.end.lras_initiator,
+            "p1_won": game.end.players[0].placement == 0,
+            "p2_won": game.end.players[1].placement == 0,
+            "datetime": game.metadata["startAt"],
+            "frames": game.metadata["lastFrame"],
+        }
 
         if debug_print:
-            print("Players:", players)
-        return players
+            pprint(data)
+
+        return data
 
     except Exception as e:
-        print(f"An error occurred while parsing the file: {e}")
+        print(f"An error occurred while parsing the file {file_path}: {e}")
+        traceback.print_exc()
         return None
 
 
@@ -356,40 +393,70 @@ def is_file_locked(file_path: str) -> bool:
         return True
 
 
-def process_replay(path: str, debug_print: bool = False) -> None:
-    global character_ratings
-    players = parse_replay(path, debug_print)
-    if not players:
+def check_lras(entry):
+    entry["p1_won"] = (
+        True
+        if entry["lras_initiator"] != None
+        and entry["p1_port"] != entry["lras_initiator"]
+        else entry["p1_won"]
+    )
+    entry["p2_won"] = (
+        True
+        if entry["lras_initiator"] != None
+        and entry["p1_port"] != entry["lras_initiator"]
+        else entry["p2_won"]
+    )
+
+    return entry
+
+
+def process_replay(data: Dict, debug_print: bool = False) -> None:
+    global character_ratings, games_df
+    if not data:
         return
 
-    player_codes = [x["code"] for x in players.values() if x["code"] != ""]
+    if data["frames"] / 60 < MIN_GAME_DURATION_SECONDS:
+        if debug_print:
+            print("Game too short")
+        return
 
+    if not ALLOW_EXIT and data["end_type"] == 7:
+        if debug_print:
+            print("Game exited")
+        return
+
+    data = check_lras(data)
+
+    # Map ports from the replays players to tier lists players.
+    P1 = None
     if (
-        (not players_codes["P1"] in player_codes)
-        or (not players_codes["P2"] in player_codes)
-    ) and len(player_codes) > 0:
-        return
+        data["p1_code"] == players_codes["P1"]
+        or data["p1_port"] == player_ports["P1"] - 1
+    ):
+        P1 = {"character": id.CSSCharacter(data["p1_character"]), "won": data["p1_won"]}
+    else:
+        P1 = {"character": id.CSSCharacter(data["p2_character"]), "won": data["p2_won"]}
 
-    get_player_port = lambda players, players_codes, player_key, default_port: next(
-        (
-            key
-            for key, value in players.items()
-            if value["code"] == players_codes[player_key]
-        ),
-        default_port - 1,
-    )
+    P2 = None
+    if (
+        data["p2_code"] == players_codes["P2"]
+        or data["p2_port"] == player_ports["P2"] - 1
+    ):
+        P2 = {"character": id.CSSCharacter(data["p2_character"]), "won": data["p2_won"]}
+    else:
+        P2 = {"character": id.CSSCharacter(data["p1_character"]), "won": data["p1_won"]}
 
-    p1_port = get_player_port(players, players_codes, "P1", player_ports["P1"])
-    p2_port = get_player_port(players, players_codes, "P2", player_ports["P2"])
-
-    new_tiers = update_tiers(
-        character_ratings,
-        players.get(p1_port),
-        players.get(p2_port),
-    )
+    new_tiers = update_tiers(character_ratings, P1, P2)
 
     if new_tiers:
         character_ratings = new_tiers
+
+
+def process_new_replay(path: str):
+    data = parse_replay(path, True)
+    if pd.to_datetime(data["datetime"]) not in games_df.index:
+        games_df.loc[pd.to_datetime(data["datetime"])] = data
+    process_replay(data, True)
 
 
 def background_task() -> None:
@@ -405,25 +472,67 @@ def background_task() -> None:
             while is_file_locked(path):
                 eventlet.sleep(0.5)
 
-            process_replay(path, True)
+            process_new_replay(path)
+
             with open(TIER_FILE, "w") as file:
                 json.dump(character_ratings, file)
 
             socketio.emit("tier_update", elo_to_tiers(character_ratings))
-            socketio.emit("results_update", LAST_RESULTS)
+            socketio.emit("results_update", last_results)
 
         eventlet.sleep(0.5)
 
 
-def recalculate_tier_list2(dir):
-    for file in os.listdir(dir):
-        try:
-            path = os.path.join(dir, file)
-            process_replay(path)
-        except Exception as e:
-            print(f"Failed to parse file {file} in recalculation: {e}")
+def recalculate_database(dir):
+    games_df = pd.DataFrame(
+        columns=[
+            "stage",
+            "p1_code",
+            "p1_port",
+            "p1_character",
+            "p1_stocks",
+            "p2_code",
+            "p2_port",
+            "p2_character",
+            "p2_stocks",
+            "end_type",
+            "lras_initiator",
+            "p1_won",
+            "p2_won",
+            "datetime",
+            "frames",
+        ]
+    )
+    games_df = games_df.set_index("datetime")
+
+    date_pattern = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
+
+    replay_dirs = [
+        os.path.join(slippi_directory, month)
+        for month in os.listdir(slippi_directory)
+        if os.path.isdir(os.path.join(slippi_directory, month))
+        and date_pattern.match(month)
+    ]
+
+    replay_dirs += EXTRA_DIRS
+
+    for dir in replay_dirs:
+        for file in os.listdir(dir):
+            try:
+                process_new_replay(os.path.join(dir, file))
+            except Exception as e:
+                print(f"Failed to parse file {file} in reprocessing: {e}")
+
+    games_df.to_pickle("db.pkl")
 
 
 if __name__ == "__main__":
+    # process_replay(
+    #     r"C:\Users\Leevi\projects\Python\MeleeEloTierList\test_replays\Game_20241019T013605.slp",
+    #     True,
+    # )
+
+    # recalculate_database(slippi_directory)
+
     socketio.start_background_task(target=background_task)
     socketio.run(app, debug=True, use_reloader=False)
