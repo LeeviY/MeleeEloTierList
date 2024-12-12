@@ -19,6 +19,13 @@ body {
     max-width: 600px;
 }
 
+.tier-list-header {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-evenly;
+    max-width: 600px;
+}
+
 .tier-list-title {
     text-align: center;
     font-size: 24px;
@@ -40,6 +47,7 @@ body {
     border-radius: 5px;
     cursor: pointer;
     font-size: 14px;
+    aspect-ratio: 1 / 1;
     transition: background-color 0.3s ease;
 }
 
@@ -123,7 +131,7 @@ body {
 }
 
 .item-rating {
-    font-size: 0.8em;
+    font-size: 0.7em;
     text-align: center;
     margin: 1px 0 0;
     color: #e0e0e0;
@@ -146,4 +154,18 @@ body {
 }
 .tier-f {
     background-color: #631b85;
+}
+
+.navbar {
+    overflow: hidden;
+    background-color: #333;
+}
+
+.navbar a {
+    float: left;
+    font-size: 16px;
+    color: white;
+    text-align: center;
+    padding: 14px 16px;
+    text-decoration: none;
 }

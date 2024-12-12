@@ -38,6 +38,9 @@ players_codes = {"P1": "LY＃863", "P2": "KEKW＃849"}
 EXTRA_DIRS = [f"{os.path.dirname(os.path.abspath(__file__))}\\2024-12"]
 
 
+LAST_RESULTS = [None] * 10
+
+
 ### Routing
 @app.route("/")
 def tier_list():
@@ -95,6 +98,7 @@ def recalculate_tier_list():
     with open(TIER_FILE, "w") as file:
         json.dump(character_ratings, file)
 
+    socketio.emit("results_update", LAST_RESULTS)
     with app.app_context():
         return jsonify(elo_to_tiers(character_ratings)), 200
 
@@ -103,6 +107,12 @@ def recalculate_tier_list():
 def get_port():
     global player_ports
     return jsonify(player_ports), 200
+
+
+@app.route("/last_results", methods=["GET"])
+def last_results():
+    global LAST_RESULTS
+    return jsonify(LAST_RESULTS), 200
 
 
 @app.route("/port", methods=["POST"])
@@ -134,6 +144,7 @@ def set_qutting():
 @socketio.on("connect")
 def handle_connect():
     emit("tier_update", elo_to_tiers(character_ratings))
+    emit("results_update", LAST_RESULTS)
 
 
 ### Logic
@@ -142,6 +153,7 @@ def update_tiers(
     p1: Dict[id.CSSCharacter, bool],
     p2: Dict[id.CSSCharacter, bool],
 ) -> Dict[str, List[Dict[str, int]]]:
+    global LAST_RESULTS
     if not p1 or not p2:
         return None
 
@@ -168,6 +180,20 @@ def update_tiers(
     )
     p1_char["matches"] += 1
     p2_char["matches"] += 1
+
+    LAST_RESULTS.append(
+        {
+            "P1": {
+                "character": id.CSSCharacter(p1["character"]).name,
+                "delta": p1_char["elo"] - p1_rating,
+            },
+            "P2": {
+                "character": id.CSSCharacter(p2["character"]).name,
+                "delta": p2_char["elo"] - p2_rating,
+            },
+        }
+    )
+    LAST_RESULTS = LAST_RESULTS[1:]
 
     return tiers
 
@@ -205,7 +231,7 @@ def elo_to_tiers(
     return tier_list
 
 
-def find_replay_directory() -> str:
+def find_replay_directory() -> Tuple[str, str]:
     base_path = "C:\\Users"
     user_dirs = [
         os.path.join(base_path, user)
@@ -370,14 +396,12 @@ def background_task() -> None:
     print(f"Watching directory: {latest_directory}")
     global character_ratings
 
-    socketio.emit("tier_update", elo_to_tiers(character_ratings))
-
     while True:
-        new_file = detect_new_files(slippi_directory)
+        new_file = detect_new_files(latest_directory)
         if new_file != "":
             print(f"Found new replay: {new_file}")
 
-            path = os.path.join(slippi_directory, new_file)
+            path = os.path.join(latest_directory, new_file)
             while is_file_locked(path):
                 eventlet.sleep(0.5)
 
@@ -386,6 +410,7 @@ def background_task() -> None:
                 json.dump(character_ratings, file)
 
             socketio.emit("tier_update", elo_to_tiers(character_ratings))
+            socketio.emit("results_update", LAST_RESULTS)
 
         eventlet.sleep(0.5)
 

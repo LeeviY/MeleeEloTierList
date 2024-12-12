@@ -5,10 +5,15 @@ document.addEventListener("DOMContentLoaded", () => {
 const socket = io.connect("http://127.0.0.1:5000");
 socket.on("tier_update", function (data) {
     console.log(data);
-    updateData(data);
+    updateTierList(data);
 });
 
-function updateData(data) {
+socket.on("results_update", function (data) {
+    console.log(data);
+    renderLastResults(data);
+});
+
+function updateTierList(data) {
     console.log(data);
     renderPlayerTierList("tier-list-p1", data.P1);
     renderPlayerTierList("tier-list-p2", data.P2);
@@ -64,8 +69,6 @@ function alignTiers(tierNames) {
     }
     tierNames.forEach((tierName) => {
         const tiers = document.querySelectorAll(`.tier.tier-${tierName}`);
-        console.log(tiers);
-
         let maxHeight = 0;
         tiers.forEach((tier) => {
             const height = tier.querySelector(".tier-items").scrollHeight;
@@ -79,6 +82,34 @@ function alignTiers(tierNames) {
                 ".tier-items"
             ).style.minHeight = `${maxHeight}px`;
         });
+    });
+}
+
+function renderLastResults(results) {
+    console.log(Object.entries(results));
+    const resultsContainer = document.querySelector(".result-items");
+    resultsContainer.innerHTML = "";
+
+    results.forEach((result) => {
+        const resultDiv = document.createElement("div");
+        resultDiv.classList.add("result");
+        for (const [player, items] of Object.entries(result)) {
+            const itemDiv = document.createElement("div");
+            itemDiv.classList.add("item");
+            itemDiv.style.float = player == "P1" ? "left" : "right";
+            const img = document.createElement("img");
+            img.src = `/static/images/${items.character}.png`;
+            itemDiv.appendChild(img);
+            const ratingText = document.createElement("p");
+            ratingText.classList.add("item-rating");
+            ratingText.textContent = `${Math.round(items.delta)}`;
+            itemDiv.appendChild(ratingText);
+            resultDiv.appendChild(itemDiv);
+        }
+        const clear = document.createElement("div");
+        clear.style.clear = "both";
+        resultDiv.appendChild(clear);
+        resultsContainer.appendChild(resultDiv);
     });
 }
 
@@ -168,7 +199,7 @@ function resetTierList() {
         })
             .then((response) => response.json())
             .then((data) => {
-                updateData(data);
+                updateTierList(data);
                 console.log("Reset successful:", data);
             })
             .catch((err) => {
@@ -184,7 +215,7 @@ function recalculateTierList() {
         })
             .then((response) => response.json())
             .then((data) => {
-                updateData(data);
+                updateTierList(data);
                 console.log("Recalculation successful:", data);
             })
             .catch((err) => {
