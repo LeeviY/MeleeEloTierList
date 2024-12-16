@@ -4,17 +4,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
 const socket = io.connect("http://127.0.0.1:5000");
 socket.on("tier_update", function (data) {
-    console.log(data);
+    console.log("tier_update", data);
     updateTierList(data);
 });
 
 socket.on("results_update", function (data) {
-    console.log(data);
+    console.log("results_update", data);
     renderLastResults(data);
 });
 
 function updateTierList(data) {
-    console.log(data);
     renderPlayerTierList("tier-list-p1", data.P1);
     renderPlayerTierList("tier-list-p2", data.P2);
     alignTiers(
@@ -86,7 +85,6 @@ function alignTiers(tierNames) {
 }
 
 function renderLastResults(results) {
-    console.log(Object.entries(results));
     const resultsContainer = document.querySelector(".result-items");
     resultsContainer.innerHTML = "";
 
@@ -221,5 +219,43 @@ function recalculateTierList() {
             .catch((err) => {
                 console.error("Error recalculating tier list:", err);
             });
+    }
+}
+
+function toggleActionMenu() {
+    document.querySelector(".action-buttons").classList.toggle("collapsed");
+}
+
+async function handleStartDateChange() {
+    try {
+        const response = await fetch("/date_range", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ player, port }),
+        });
+
+        const data = await response.json();
+        if (!data.message) {
+            alert(data.error || "Failed to update date.");
+        }
+    } catch (error) {
+        console.error("Error setting date:", error);
+    }
+}
+
+async function handleEndDateChange() {
+    try {
+        const response = await fetch("/port", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ player, port }),
+        });
+
+        const data = await response.json();
+        if (!data.message) {
+            alert(data.error || "Failed to update date.");
+        }
+    } catch (error) {
+        console.error("Error setting date:", error);
     }
 }

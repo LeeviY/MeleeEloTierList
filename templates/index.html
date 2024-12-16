@@ -15,7 +15,7 @@
     <div class="navbar">
         <a href="#">Tier List (elo)</a>
         <a href="#">Tier List (stocks)</a>
-        <a href="#">Matchup Chart</a>
+        <a href="matchup_chart">Matchup Chart</a>
     </div>
     <div class="container">
         <!-- Player 1's Tier List -->
@@ -30,7 +30,7 @@
                 </div>
             </div>
             <div class="tier-list" id="tier-list-p1">
-                <!-- Dynamic content for P1 -->
+                <p>Loading tier list...</p>
             </div>
         </div>
 
@@ -53,16 +53,23 @@
                 </div>
             </div>
             <div class="tier-list" id="tier-list-p2">
-                <!-- Dynamic content for P2 -->
+                <p>Loading tier list...</p>
             </div>
         </div>
     </div>
-    <div class="action-buttons">
-        <button id="allow-exit-button" onclick="toggleAllowExit()">
-            Allow Quitting: false
-        </button>
-        <button onclick="resetTierList()">Reset Tier List</button>
-        <button onclick="recalculateTierList()">Recalculate Tier List</button>
+    <div class="action-buttons collapsed">
+        <div class="menu-content">
+            <button id="allow-exit-button" onclick="toggleAllowExit()">Allow Quitting: false</button>
+            <button onclick="resetTierList()">Reset Tier List</button>
+            <button onclick="recalculateTierList()">Recalculate Tier List</button>
+            <div class="date-range-selection">
+                <label for="start-date">From:</label>
+                <input type="date" id="start-date" onchange="" />
+                <label for="end-date">To:</label>
+                <input type="date" id="end-date" onchange="" />
+            </div>
+        </div>
+        <button class="toggle-button" onclick="toggleActionMenu()">≡</button>
     </div>
 </body>
 

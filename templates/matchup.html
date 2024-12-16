@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Character Matchup Chart</title>
+    <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
+    <link rel="stylesheet" href="static/css/styles.css" />
+    <style>
+        table {
+            border-collapse: collapse;
+        }
+
+        th,
+        td {
+            border: 1px solid #000;
+            text-align: center;
+            padding: 2px;
+            font-size: 0.7em;
+            color: #000;
+            width: 28px;
+            height: 28px;
+        }
+
+        th img,
+        td img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        th {
+            background-color: #f2f2f2;
+        }
+
+        .low {
+            background-color: #ff9999;
+        }
+
+        .medium-low {
+            background-color: #ffcc99;
+        }
+
+        .medium {
+            background-color: #ffff99;
+        }
+
+        .medium-high {
+            background-color: #ccff99;
+        }
+
+        .high {
+            background-color: #99ff99;
+        }
+
+        .nan {
+            background-color: #000000;
+        }
+    </style>
+</head>
+
+<body>
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+            fetchMatchups();
+        });
+
+        const socket = io.connect("http://127.0.0.1:5000");
+        socket.on("matchup_update", function (data) {
+            console.log(data);
+        });
+
+        function renderMatchupChart(matchups, id) {
+            const characters = [
+                "CAPTAIN_FALCON",
+                "DONKEY_KONG",
+                "FOX",
+                "GAME_AND_WATCH",
+                "KIRBY",
+                "BOWSER",
+                "LINK",
+                "LUIGI",
+                "MARIO",
+                "MARTH",
+                "MEWTWO",
+                "NESS",
+                "PEACH",
+                "PIKACHU",
+                "ICE_CLIMBERS",
+                "JIGGLYPUFF",
+                "SAMUS",
+                "YOSHI",
+                "ZELDA",
+                "SHEIK",
+                "FALCO",
+                "YOUNG_LINK",
+                "DR_MARIO",
+                "ROY",
+                "PICHU",
+                "GANONDORF",
+            ];
+
+            const table = document.getElementById(id)
+
+            // Create header.
+            const headerRow = document.createElement("tr")
+            const td = document.createElement("td")
+            headerRow.appendChild(td);
+
+            characters.forEach((character) => {
+                const td = document.createElement("td")
+                const img = document.createElement("img");
+                img.src = `/static/images/${character}.png`;
+                td.appendChild(img);
+                headerRow.appendChild(td);
+            })
+
+            table.querySelector(".matchup-chart-body").appendChild(headerRow)
+
+            // Create table rows dynamically
+            for (const [index, element] of matchups.entries()) {
+                const row = document.createElement("tr")
+                const td = document.createElement("td")
+                const img = document.createElement("img");
+                img.src = `/static/images/${characters[index]}.png`;
+                td.appendChild(img);
+                row.appendChild(td);
+
+                element.forEach((x) => {
+                    const td = document.createElement("td")
+                    td.innerText = Math.round(x * 100) / 100
+                    if (x < 0.2) {
+                        td.className = 'low';
+                    } else if (x >= 0.2 && x < 0.4) {
+                        td.className = 'medium-low';
+                    } else if (x >= 0.4 && x < 0.6) {
+                        td.className = 'medium';
+                    } else if (x >= 0.6 && x < 0.8) {
+                        td.className = 'medium-high';
+                    } else if (x >= 0.8 && x <= 1) {
+                        td.className = 'high';
+                    } else {
+                        td.className = 'nan';
+                    }
+
+                    row.appendChild(td);
+                })
+
+                table.querySelector(".matchup-chart-body").appendChild(row)
+            }
+        }
+
+        function flipDiagonally(matrix) {
+            let n = matrix.length;
+
+            // Swap elements across the diagonal
+            for (let i = 0; i < n; i++) {
+                for (let j = i + 1; j < n; j++) {
+                    // Swap matrix[i][j] with matrix[j][i]
+                    let temp = matrix[i][j];
+                    matrix[i][j] = matrix[j][i];
+                    matrix[j][i] = temp;
+                }
+            }
+            return matrix;
+        }
+
+        async function fetchMatchups() {
+            try {
+                const response = await fetch("/matchups", { method: "GET" });
+                const data = await response.json();
+                console.log(data)
+                renderMatchupChart(data, "p1-matchup-chart")
+                renderMatchupChart(flipDiagonally(data).map(x => x.map(y => 1 - y)), "p2-matchup-chart")
+            } catch (error) {
+                console.error("Error fetching matchups:", error);
+            }
+        }
+    </script>
+    <div class="navbar">
+        <a href="/">Tier List (elo)</a>
+        <a href="#">Tier List (stocks)</a>
+        <a href="matchup_chart">Matchup Chart</a>
+    </div>
+
+    <h1>Character Matchup Chart</h1>
+
+    <div class="container">
+        <table id="p1-matchup-chart">
+            <tbody class="matchup-chart-body"></tbody>
+        </table>
+        <table id="p2-matchup-chart">
+            <tbody class="matchup-chart-body"></tbody>
+        </table>
+    </div>
+
+</body>
+
+</html>

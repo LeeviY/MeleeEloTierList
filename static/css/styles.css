@@ -83,6 +83,39 @@ body {
     background-color: #3567cc;
 }
 
+.action-buttons.collapsed .menu-content {
+    display: none;
+}
+
+.menu-content {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 5px;
+    border-radius: 5px;
+    background-color: #131313;
+}
+
+.toggle-button {
+    cursor: pointer;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    width: 40px;
+    height: 40px;
+    padding: 8px 12px;
+    margin-bottom: 10px;
+    font-size: 16px;
+    border-radius: 5px;
+    justify-content: center;
+    align-items: center;
+    margin-left: auto;
+}
+
+.toggle-button.collapsed {
+    background-color: #0056b3;
+}
+
 .current-port {
     text-align: center;
     margin-top: 10px;
