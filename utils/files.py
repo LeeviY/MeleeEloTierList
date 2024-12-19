@@ -3,8 +3,10 @@ import re
 import traceback
 from datetime import datetime
 from pprint import pprint
-from typing import Dict, List, Tuple, Union
+from typing import Dict, Union
 
+import pandas as pd
+import pytz
 import win32file
 from peppi_py import read_slippi
 from slippi import id
@@ -85,18 +87,18 @@ def find_replay_directory() -> str:
     return latest_dir
 
 
-previous_files = set(os.listdir(find_replay_directory()))
+def date_from_replay_name(filename: str) -> str:
+    date = filename.split("_")[1].split(".")[0]
+    return (
+        datetime.strptime(date, "%Y%m%dT%H%M%S")
+        .astimezone(pytz.timezone("Europe/Helsinki"))
+        .isoformat()
+    )
 
 
-def detect_new_files(directory: str) -> str:
-    global previous_files
-
-    current_files = set(os.listdir(directory))
-    new_files = current_files - previous_files
-    previous_files = current_files
-
-    if new_files:
-        for file in new_files:
+def detect_new_files(games_df: pd.DataFrame, directory: str) -> str:
+    for file in os.listdir(directory):
+        if pd.to_datetime(date_from_replay_name(file)) not in games_df.index:
             return file
 
     return ""
@@ -108,14 +110,15 @@ def parse_replay(
     try:
         game = read_slippi(file_path, skip_frames=False)
         if debug_print:
-            print(game)
+            pass
+            # print(game)
 
         players = {}
         for player in game.start.players:
             if player.type != 0:
                 if debug_print:
                     print("Non human player")
-                return
+                {"datetime": game.metadata["startAt"], "ignore": True}
 
             players[player.port.value] = {
                 "code": player.netplay.code,
@@ -130,7 +133,8 @@ def parse_replay(
         ) and len(game_player_codes) > 0:
             if debug_print:
                 print("Unknown player")
-            return
+
+            return {"datetime": game.metadata["startAt"], "ignore": True}
 
         # If zelda or sheik, use the character with more frames.
         for port, player in players.items():
@@ -164,6 +168,7 @@ def parse_replay(
             "p2_won": game.end.players[1].placement == 0,
             "datetime": game.metadata["startAt"],
             "frames": game.metadata["lastFrame"],
+            "ignore": False,
         }
 
         if debug_print:
@@ -174,4 +179,7 @@ def parse_replay(
     except Exception as e:
         print(f"An error occurred while parsing the file {file_path}: {e}")
         traceback.print_exc()
-        return None
+        return {
+            "datetime": date_from_replay_name(file_path.split("\\")[-1]),
+            "ignore": True,
+        }

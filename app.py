@@ -16,6 +16,7 @@ from flask import Flask, jsonify, render_template, request
 from flask_socketio import SocketIO, emit
 from slippi import id
 
+import database
 import settings
 from utils.files import (
     detect_new_files,
@@ -29,29 +30,13 @@ app.json.sort_keys = False
 socketio = SocketIO(app)
 
 
-games_df = pd.DataFrame(
-    columns=[
-        "stage",
-        "p1_code",
-        "p1_port",
-        "p1_character",
-        "p1_stocks",
-        "p2_code",
-        "p2_port",
-        "p2_character",
-        "p2_stocks",
-        "end_type",
-        "lras_initiator",
-        "p1_won",
-        "p2_won",
-        "datetime",
-        "frames",
-    ]
-)
+games_df = pd.DataFrame(columns=database.columns)
 games_df = games_df.set_index("datetime")
 games_df = pd.read_pickle("db.pkl")
 games_df = games_df.sort_index()
+# games_df.index = games_df.index.tz_localize(None)
 print(games_df)
+print(games_df.columns)
 
 player_ports = settings.DEFAULT_PLAYER_PORTS
 date_range = {"start": datetime(1, 1, 1, 0, 0, 0), "end": datetime.now()}
@@ -60,6 +45,7 @@ last_results = [None] * 10
 
 character_ratings = {}
 
+ignored_games = set()
 
 matchup_chart = [["nan"] * 26 for _ in range(26)]
 
@@ -252,7 +238,7 @@ def elo_to_tiers(
 
 def process_game(data: Dict, debug_print: bool = False) -> None:
     global player_ports
-    if not data:
+    if not data or data["ignore"]:
         return
 
     if data["frames"] / 60 < settings.MIN_GAME_DURATION_SECONDS:
@@ -324,9 +310,13 @@ def process_game(data: Dict, debug_print: bool = False) -> None:
 
 
 def process_new_replay(path: str):
+    global games_df
     data = parse_replay(path, True)
-    if pd.to_datetime(data["datetime"]) not in games_df.index:
-        games_df.loc[pd.to_datetime(data["datetime"])] = data
+    if not data:
+        return
+    date = pd.to_datetime(data["datetime"])
+    if date not in games_df.index:
+        games_df.loc[date] = data
     process_game(data, True)
 
 
@@ -335,12 +325,13 @@ def reload_tier_list():
     with open(settings.TIER_FILE_BASE, "r") as file:
         character_ratings = json.load(file)
 
+    # TODO: use games_df["ignored" == False]
     for row in games_df.to_dict(orient="records"):
         process_game(row)
 
 
 def background_task() -> None:
-    global character_ratings
+    global character_ratings, games_df
 
     latest_directory = find_replay_directory()
     print(f"Watching directory: {latest_directory}")
@@ -348,7 +339,7 @@ def background_task() -> None:
     reload_tier_list()
 
     while True:
-        new_file = detect_new_files(latest_directory)
+        new_file = detect_new_files(games_df, latest_directory)
         if new_file != "":
             print(f"Found new replay: {new_file}")
 
@@ -386,10 +377,13 @@ if __name__ == "__main__":
                 "p1_won",
                 "p2_won",
                 "end_type",
+                "ignore",
             ]
         ],
     )
     # exit()
+
+    games_df.to_csv("db.csv")
 
     socketio.start_background_task(target=background_task)
     socketio.run(app, debug=True, use_reloader=False)

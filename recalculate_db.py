@@ -4,6 +4,7 @@ import re
 
 import pandas as pd
 
+import database
 import settings
 from utils.files import find_slippi_replay_directory, parse_replay
 
@@ -12,25 +13,7 @@ def recalculate_database(overwrite: bool = False):
     if not overwrite and os.path.exists("db.pkl"):
         games_df = pd.read_pickle("db.pkl")
     else:
-        games_df = pd.DataFrame(
-            columns=[
-                "stage",
-                "p1_code",
-                "p1_port",
-                "p1_character",
-                "p1_stocks",
-                "p2_code",
-                "p2_port",
-                "p2_character",
-                "p2_stocks",
-                "end_type",
-                "lras_initiator",
-                "p1_won",
-                "p2_won",
-                "datetime",
-                "frames",
-            ]
-        )
+        games_df = pd.DataFrame(columns=database.columns)
         games_df = games_df.set_index("datetime")
 
     date_pattern = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
@@ -61,10 +44,10 @@ def recalculate_database(overwrite: bool = False):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Recalculate the game database.")
     parser.add_argument(
-        "--override",
+        "--overwrite",
         action="store_true",
         help="If set, overwrite the existing database instead of appending to it.",
     )
     args = parser.parse_args()
 
-    recalculate_database(overwrite=args.append)
+    recalculate_database(overwrite=args.overwrite)
