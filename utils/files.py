@@ -11,6 +11,7 @@ import win32file
 from peppi_py import read_slippi
 from slippi import id
 
+import database
 import settings
 
 
@@ -105,70 +106,119 @@ def detect_new_files(games_df: pd.DataFrame, directory: str) -> str:
 
 
 def parse_replay(
-    file_path: str, debug_print: bool = False
+    file_path: str, ports: Dict[str, int] = None, debug_print: bool = False
 ) -> Dict[int, Dict[str, Union[id.CSSCharacter, bool]]]:
     try:
         game = read_slippi(file_path, skip_frames=False)
         if debug_print:
-            pass
             # print(game)
+            pass
 
-        players = {}
+        datetime = game.metadata["startAt"]
+
+        # Check and ignore CPU games.
         for player in game.start.players:
             if player.type != 0:
                 if debug_print:
                     print("Non human player")
-                {"datetime": game.metadata["startAt"], "ignore": True}
+                empty = database.empty.copy()
+                empty["datetime"] = datetime
+                return empty
 
-            players[player.port.value] = {
-                "code": player.netplay.code,
-                "character": id.CSSCharacter(player.character),
-            }
-
-        # Check that both players are known.
-        game_player_codes = [x["code"] for x in players.values() if x["code"] != ""]
+        # Check that both players are known if not local game.
+        game_player_codes = [
+            x.netplay.code for x in game.start.players if x.netplay.code != ""
+        ]
         if (
             (not settings.PLAYER_CODES["P1"] in game_player_codes)
             or (not settings.PLAYER_CODES["P2"] in game_player_codes)
         ) and len(game_player_codes) > 0:
             if debug_print:
                 print("Unknown player")
-
-            return {"datetime": game.metadata["startAt"], "ignore": True}
+            empty = database.empty.copy()
+            empty["datetime"] = datetime
+            return empty
 
         # If zelda or sheik, use the character with more frames.
-        for port, player in players.items():
-            if (
-                player["character"] == id.CSSCharacter.ZELDA
-                or player == id.CSSCharacter.SHEIK
-            ):
-                chars = game.metadata["players"][str(port)]["characters"]
-                most_played = ("", 0)
-                for c, frames in chars.items():
-                    if frames > most_played[1]:
-                        most_played = (c, frames)
-                player["character"] = id.CSSCharacter[
-                    id.InGameCharacter(int(most_played[0])).name
-                ]
+        for player in game.start.players:
+            if player.character in {id.CSSCharacter.ZELDA, id.CSSCharacter.SHEIK}:
+                chars = game.metadata["players"][str(player.port)]["characters"]
+                player.character = id.CSSCharacter[
+                    id.InGameCharacter(int(max(chars, key=chars.get))).name
+                ].value
 
+        # Notice: py-slippi has indexes depending on port and empty players in rest of the ports,
+        #         but peppi-py just lists the non empty players in port order.
         # TODO: check if player order is consistant between lists
+        p1_index = 0
+        p2_index = 1
+
+        game_p1 = {
+            "code": game.start.players[p1_index].netplay.code,
+            "port": game.start.players[p1_index].port.value
+            + 1,  # replay ports start from 0
+            "character": id.CSSCharacter(game.start.players[p1_index].character),
+            "stocks": game.frames.ports[p1_index].leader.post.stocks[-1].as_py(),
+            "won": game.end.players[p1_index].placement == 0,
+        }
+
+        game_p2 = {
+            "code": game.start.players[p2_index].netplay.code,
+            "port": game.start.players[p2_index].port.value
+            + 1,  # replay ports start from 0
+            "character": id.CSSCharacter(game.start.players[p2_index].character),
+            "stocks": game.frames.ports[p2_index].leader.post.stocks[-1].as_py(),
+            "won": game.end.players[p2_index].placement == 0,
+        }
+
+        # Map players code based on ports.
+        if ports and not game_p1["code"] and not game_p2["code"]:
+            if game_p1["port"] == ports["P1"] and game_p2["port"] == ports["P2"]:
+                game_p1["code"] = settings.PLAYER_CODES["P1"]
+                game_p2["code"] = settings.PLAYER_CODES["P2"]
+            elif game_p1["port"] == ports["P2"] and game_p2["port"] == ports["P1"]:
+                game_p1["code"] = settings.PLAYER_CODES["P2"]
+                game_p2["code"] = settings.PLAYER_CODES["P1"]
+            else:
+                if debug_print:
+                    print("Port mapping defined but no matching player found.")
+                empty = database.empty.copy()
+                empty["datetime"] = datetime
+                return empty
+
+        p1 = game_p1
+        p2 = game_p2
+        # Swap players so that game_p1 matches database P1.
+        if not p1["code"] == settings.PLAYER_CODES["P1"]:
+            temp = p1
+            p1 = p2
+            p2 = temp
+
+        # if p1["won"] == 1.0 or p1["won"] == 0.0 or p2["won"] == 1.0 or p2["won"] == 0.0:
+        #     print(p1, p2)
+
+        # replay ports start from 0
+        lras_initiator = game.end.lras_initiator
+        lras_initiator = lras_initiator + 1 if lras_initiator else lras_initiator
+
         data = {
             "stage": game.start.stage,
-            "p1_code": game.start.players[0].netplay.code,
-            "p1_port": game.start.players[0].port.value,
-            "p1_character": players[game.start.players[0].port]["character"],
-            "p1_stocks": game.frames.ports[0].leader.post.stocks[-1].as_py(),
-            "p2_code": game.start.players[1].netplay.code,
-            "p2_port": game.start.players[1].port.value,
-            "p2_character": players[game.start.players[1].port]["character"],
-            "p2_stocks": game.frames.ports[1].leader.post.stocks[-1].as_py(),
+            "p1_code": p1["code"],
+            "p1_port": p1["port"],
+            "p1_character": p1["character"],
+            "p1_stocks": p1["stocks"],
+            "p2_code": p2["code"],
+            "p2_port": p2["port"],
+            "p2_character": p2["character"],
+            "p2_stocks": p2["stocks"],
             "end_type": game.end.method.value,
-            "lras_initiator": game.end.lras_initiator,
-            "p1_won": game.end.players[0].placement == 0,
-            "p2_won": game.end.players[1].placement == 0,
-            "datetime": game.metadata["startAt"],
+            "lras_initiator": lras_initiator,
+            "p1_won": p1["won"],
+            "p2_won": p2["won"],
+            "datetime": datetime,
             "frames": game.metadata["lastFrame"],
             "ignore": False,
+            "type": "netplay" if len(game_player_codes) else "local",
         }
 
         if debug_print:
@@ -179,7 +229,6 @@ def parse_replay(
     except Exception as e:
         print(f"An error occurred while parsing the file {file_path}: {e}")
         traceback.print_exc()
-        return {
-            "datetime": date_from_replay_name(file_path.split("\\")[-1]),
-            "ignore": True,
-        }
+        empty = database.empty.copy()
+        empty["datetime"] = date_from_replay_name(file_path.split("\\")[-1])
+        return empty

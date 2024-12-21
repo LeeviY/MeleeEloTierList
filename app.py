@@ -1,10 +1,8 @@
 import json
 import os
-import re
 
 import eventlet
 import numpy as np
-import pandasql as psql
 
 eventlet.monkey_patch()
 from datetime import datetime
@@ -34,9 +32,9 @@ games_df = pd.DataFrame(columns=database.columns)
 games_df = games_df.set_index("datetime")
 games_df = pd.read_pickle("db.pkl")
 games_df = games_df.sort_index()
-# games_df.index = games_df.index.tz_localize(None)
 print(games_df)
 print(games_df.columns)
+print(games_df.dtypes)
 
 player_ports = settings.DEFAULT_PLAYER_PORTS
 date_range = {"start": datetime(1, 1, 1, 0, 0, 0), "end": datetime.now()}
@@ -47,7 +45,7 @@ character_ratings = {}
 
 ignored_games = set()
 
-matchup_chart = [["nan"] * 26 for _ in range(26)]
+matchup_chart = [[{"win_rate": "nan", "matches": 0}] * 26 for _ in range(26)]
 
 
 ### TODO:
@@ -60,7 +58,7 @@ matchup_chart = [["nan"] * 26 for _ in range(26)]
 @app.route("/")
 def tier_list():
     global character_ratings
-    return render_template("index.html")  # , tiers=elo_to_tiers(character_ratings))
+    return render_template("index.html")
 
 
 @app.route("/matchup_chart")
@@ -71,7 +69,6 @@ def matchup_charts():
 @app.route("/matchups", methods=["GET"])
 def matchups():
     global matchup_chart
-
     return jsonify(matchup_chart)
 
 
@@ -81,7 +78,7 @@ def reset_tier_list():
     with open(settings.TIER_FILE_BASE, "r") as file:
         character_ratings = json.load(file)
 
-    return jsonify(elo_to_tiers(character_ratings))
+    return jsonify(character_ratings)
 
 
 @app.route("/recalculate", methods=["POST"])
@@ -91,7 +88,7 @@ def recalculate_tier_list():
 
     socketio.emit("results_update", last_results)
     with app.app_context():
-        return jsonify(elo_to_tiers(character_ratings))
+        return jsonify(character_ratings)
 
 
 @app.route("/port", methods=["GET"])
@@ -149,7 +146,7 @@ def set_date_range():
 
 @socketio.on("connect")
 def handle_connect():
-    emit("tier_update", elo_to_tiers(character_ratings))
+    emit("tier_update", character_ratings)
     emit("results_update", last_results)
     emit("matchup_update", matchup_chart)
 
@@ -203,40 +200,42 @@ def update_tiers(
     last_results = last_results[1:]
 
 
-def elo_to_tiers(
-    tiers: Dict[str, List[Dict[str, int]]]
-) -> Dict[str, List[Dict[str, Union[str, int]]]]:
-    tier_list = {}
-    for player, characters in tiers.items():
-        tier_list[player] = {"S": [], "A": [], "B": [], "C": [], "D": [], "F": []}
-        for i, character in enumerate(characters):
-            rating = character["elo"]
-            tier = ""
-            if rating >= 2000:
-                tier = "S"
-            elif rating >= 1800:
-                tier = "A"
-            elif rating >= 1600:
-                tier = "B"
-            elif rating >= 1400:
-                tier = "C"
-            elif rating >= 1200:
-                tier = "D"
-            else:
-                tier = "F"
+# def elo_to_tiers(
+#     tiers: Dict[str, List[Dict[str, int]]]
+# ) -> Dict[str, List[Dict[str, Union[str, int]]]]:
+#     tier_list = {}
+#     for player, characters in tiers.items():
+#         tier_list[player] = {"S": [], "A": [], "B": [], "C": [], "D": [], "F": []}
+#         for i, character in enumerate(characters):
+#             rating = character["elo"]
+#             tier = ""
+#             if rating >= 2000:
+#                 tier = "S"
+#             elif rating >= 1800:
+#                 tier = "A"
+#             elif rating >= 1600:
+#                 tier = "B"
+#             elif rating >= 1400:
+#                 tier = "C"
+#             elif rating >= 1200:
+#                 tier = "D"
+#             else:
+#                 tier = "F"
 
-            tier_list[player][tier].append(
-                {
-                    "name": id.CSSCharacter(i).name,
-                    "rating": rating,
-                    "matches": character["matches"],
-                }
-            )
+#             tier_list[player][tier].append(
+#                 {
+#                     "name": id.CSSCharacter(i).name,
+#                     "rating": rating,
+#                     "matches": character["matches"],
+#                 }
+#             )
 
-    return tier_list
+#     return tier_list
 
 
-def process_game(data: Dict, debug_print: bool = False) -> None:
+def process_game(
+    data: Dict[str, Union[int, str]], debug_print: bool = False, weighted: bool = True
+) -> None:
     global player_ports
     if not data or data["ignore"]:
         return
@@ -251,83 +250,81 @@ def process_game(data: Dict, debug_print: bool = False) -> None:
             print("Game exited")
         return
 
-    # If quitting is allowed by above condition, redefine the winner as the non quitter.
-    data["p1_won"] = (
-        True
-        if data["lras_initiator"] != None and data["p1_port"] != data["lras_initiator"]
-        else data["p1_won"]
-    )
-    data["p2_won"] = (
-        True
-        if data["lras_initiator"] != None and data["p1_port"] != data["lras_initiator"]
-        else data["p2_won"]
-    )
+    # Redefine the winner as the non quitter.
+    lras_initiator = data["lras_initiator"]
+    if lras_initiator != None and not np.isnan(lras_initiator):
+        data["p1_won"] = data["p1_port"] != lras_initiator
+        data["p2_won"] = data["p2_port"] != lras_initiator
 
-    # Map ports from the replays players to tier lists players.
-    P1 = None
-    if (
-        data["p1_code"] == settings.PLAYER_CODES["P1"]
-        or data["p1_port"] == player_ports["P1"] - 1
-    ):
-        P1 = {"character": id.CSSCharacter(data["p1_character"]), "won": data["p1_won"]}
-    else:
-        P1 = {"character": id.CSSCharacter(data["p2_character"]), "won": data["p2_won"]}
+    if data["p1_won"] == data["p2_won"]:
+        print(data)
 
-    P2 = None
-    if (
-        data["p2_code"] == settings.PLAYER_CODES["P2"]
-        or data["p2_port"] == player_ports["P2"] - 1
-    ):
-        P2 = {"character": id.CSSCharacter(data["p2_character"]), "won": data["p2_won"]}
-    else:
-        P2 = {"character": id.CSSCharacter(data["p1_character"]), "won": data["p1_won"]}
+    P1 = {"character": id.CSSCharacter(data["p1_character"]), "won": data["p1_won"]}
+    P2 = {"character": id.CSSCharacter(data["p2_character"]), "won": data["p2_won"]}
 
     update_tiers(P1, P2)
+    update_matchups(P1, P2, weighted)
 
-    value1 = games_df[
-        (games_df["p1_character"] == P1["character"])
-        & (games_df["p2_character"] == P2["character"])
-        & (games_df["p1_code"] == settings.PLAYER_CODES["P1"])
-        & (games_df["end_type"] != 7)
-    ]["p1_won"].mean()
 
-    value2 = games_df[
-        (games_df["p1_character"] == P2["character"])
-        & (games_df["p2_character"] == P1["character"])
-        & (games_df["p2_code"] == settings.PLAYER_CODES["P1"])
-        & (games_df["end_type"] != 7)
-    ]["p2_won"].mean()
+def update_matchups(P1, P2, weighted: bool = True):
+    # Matchup chart is stored from the perspective of P1.
+    global matchup_chart
 
-    value = "nan"
-    if not np.isnan(value1) and not np.isnan(value2):
-        value = (value1 + value2) / 2
-    elif not np.isnan(value1):
-        value = value1
-    elif not np.isnan(value2):
-        value = value2
+    winrate = "nan"
+    if not weighted:
+        winrate1 = games_df[
+            (games_df["p1_character"] == P1["character"])
+            & (games_df["p2_character"] == P2["character"])
+            & (games_df["p1_code"] == settings.PLAYER_CODES["P1"])
+            & (games_df["end_type"] != 7)
+        ]["p1_won"].mean()
 
-    matchup_chart[P1["character"]][P2["character"]] = value
+        if not np.isnan(winrate1):
+            winrate = winrate1
+    else:
+        # weight_func = lambda x: 1.1 ** (1 - x)
+        weight_func = lambda x: np.e ** (-0.05 * (x - 1))
+
+        subset = games_df[
+            (games_df["p1_character"] == P1["character"])
+            & (games_df["p2_character"] == P2["character"])
+            & (games_df["p1_code"] == settings.PLAYER_CODES["P1"])
+            & (games_df["end_type"] != 7)
+        ]
+
+        if not subset.empty:
+            weights = np.array([weight_func(i) for i in range(len(subset))])
+            winrate1 = (subset["p1_won"] * weights).sum() / weights.sum()
+
+    old_matches = matchup_chart[P1["character"]][P2["character"]]["matches"]
+    matchup_chart[P1["character"]][P2["character"]] = {
+        "win_rate": winrate,
+        "matches": old_matches + 1,
+    }
 
 
 def process_new_replay(path: str):
     global games_df
-    data = parse_replay(path, True)
-    if not data:
-        return
+    data = parse_replay(path, player_ports, True)
     date = pd.to_datetime(data["datetime"])
     if date not in games_df.index:
         games_df.loc[date] = data
+        games_df.to_pickle("db.pkl")
     process_game(data, True)
 
 
 def reload_tier_list():
-    global character_ratings
+    global character_ratings, matchup_chart
     with open(settings.TIER_FILE_BASE, "r") as file:
         character_ratings = json.load(file)
+
+    matchup_chart = [[{"win_rate": "nan", "matches": 0}] * 26 for _ in range(26)]
 
     # TODO: use games_df["ignored" == False]
     for row in games_df.to_dict(orient="records"):
         process_game(row)
+
+    print("Tier list recalculation done.")
 
 
 def background_task() -> None:
@@ -349,41 +346,26 @@ def background_task() -> None:
 
             process_new_replay(path)
 
-            socketio.emit("tier_update", elo_to_tiers(character_ratings))
+            socketio.emit("tier_update", character_ratings)
             socketio.emit("results_update", last_results)
 
         eventlet.sleep(0.5)
 
 
 if __name__ == "__main__":
-    # process_new_replay(
+    # parse_replay(
     #     r"C:\Users\Leevi\projects\Python\MeleeEloTierList\test_replays\Game_20241019T013605.slp",
+    #     player_ports,
+    #     True,
     # )
 
-    print(
-        "here",
-        games_df[
-            (
-                ((games_df["p1_character"] == 17) & (games_df["p2_character"] == 2))
-                | ((games_df["p1_character"] == 2) & (games_df["p2_character"] == 17))
-            )
-            & (games_df["end_type"] != 7)
-        ][
-            [
-                "p1_code",
-                "p2_code",
-                "p1_character",
-                "p2_character",
-                "p1_won",
-                "p2_won",
-                "end_type",
-                "ignore",
-            ]
-        ],
-    )
-    # exit()
+    # parse_replay(
+    #     r"C:\Users\Leevi\projects\Python\MeleeEloTierList\test_replays\Game_20241208T180113.slp",
+    #     player_ports,
+    #     True,
+    # )
 
-    games_df.to_csv("db.csv")
+    # games_df.to_csv("db.csv")
 
     socketio.start_background_task(target=background_task)
     socketio.run(app, debug=True, use_reloader=False)

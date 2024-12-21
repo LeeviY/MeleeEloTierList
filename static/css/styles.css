@@ -79,6 +79,18 @@ body {
     transition: background-color 0.3s ease;
 }
 
+.random-character-button {
+    background-color: #4781ff;
+    color: #ffffff;
+    padding: 10px 15px;
+    margin: 10px;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 16px;
+    transition: background-color 0.3s ease;
+}
+
 .action-buttons button:hover {
     background-color: #3567cc;
 }
@@ -163,6 +175,11 @@ body {
     border-radius: 5px;
 }
 
+.result {
+    display: flex;
+    gap: 5px;
+}
+
 .item-rating {
     font-size: 0.7em;
     text-align: center;
@@ -201,4 +218,10 @@ body {
     text-align: center;
     padding: 14px 16px;
     text-decoration: none;
+}
+
+.highlight {
+    outline: 3px solid rgb(78, 169, 255);
+    outline-offset: 2px;
+    transition: outline 0.3s ease;
 }

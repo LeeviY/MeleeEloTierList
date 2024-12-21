@@ -1,6 +1,7 @@
 import argparse
 import os
 import re
+import traceback
 
 import pandas as pd
 
@@ -31,12 +32,17 @@ def recalculate_database(overwrite: bool = False):
 
     for dir in replay_dirs:
         for file in os.listdir(dir):
+            if not os.path.isfile(os.path.join(dir, file)):
+                continue
             try:
                 data = parse_replay(os.path.join(dir, file))
-                if pd.to_datetime(data["datetime"]) not in games_df.index:
-                    games_df.loc[pd.to_datetime(data["datetime"])] = data
+                date = pd.to_datetime(data["datetime"])
+                if date not in games_df.index:
+                    games_df.loc[date] = data
             except Exception as e:
+                traceback.print_exc()
                 print(f"Failed to parse file {file} in reprocessing: {e}")
+                exit()
 
     games_df.to_pickle("db.pkl")
 

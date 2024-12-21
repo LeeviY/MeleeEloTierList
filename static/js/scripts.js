@@ -13,9 +13,41 @@ socket.on("results_update", function (data) {
     renderLastResults(data);
 });
 
+const CHARACTERS = [
+    "CAPTAIN_FALCON",
+    "DONKEY_KONG",
+    "FOX",
+    "GAME_AND_WATCH",
+    "KIRBY",
+    "BOWSER",
+    "LINK",
+    "LUIGI",
+    "MARIO",
+    "MARTH",
+    "MEWTWO",
+    "NESS",
+    "PEACH",
+    "PIKACHU",
+    "ICE_CLIMBERS",
+    "JIGGLYPUFF",
+    "SAMUS",
+    "YOSHI",
+    "ZELDA",
+    "SHEIK",
+    "FALCO",
+    "YOUNG_LINK",
+    "DR_MARIO",
+    "ROY",
+    "PICHU",
+    "GANONDORF",
+];
+
+let _tierList = null;
+
 function updateTierList(data) {
-    renderPlayerTierList("tier-list-p1", data.P1);
-    renderPlayerTierList("tier-list-p2", data.P2);
+    _tierList = data;
+    renderPlayerTierList("P1", data.P1);
+    renderPlayerTierList("P2", data.P2);
     alignTiers(
         Object.keys(data.P1).map(
             Function.prototype.call,
@@ -24,11 +56,36 @@ function updateTierList(data) {
     );
 }
 
-function renderPlayerTierList(playerId, tiers) {
-    const tierListContainer = document.getElementById(playerId);
+function eloToTiers(characters) {
+    const tierList = { S: [], A: [], B: [], C: [], D: [], F: [] };
+    console.log(characters.entries());
+    for (const [i, character] of characters.entries()) {
+        const rating = character["elo"];
+        let tier = "";
+        if (rating >= 2000) tier = "S";
+        else if (rating >= 1800) tier = "A";
+        else if (rating >= 1600) tier = "B";
+        else if (rating >= 1400) tier = "C";
+        else if (rating >= 1200) tier = "D";
+        else tier = "F";
+
+        tierList[tier].push({
+            id: i,
+            name: CHARACTERS[i],
+            rating: rating,
+            matches: character["matches"],
+        });
+    }
+    return tierList;
+}
+
+function renderPlayerTierList(playerId, ratings) {
+    const tierListContainer = document.getElementById(
+        `tier-list-${playerId.toLowerCase()}`
+    );
     tierListContainer.innerHTML = "";
 
-    for (const [tier, items] of Object.entries(tiers)) {
+    for (const [tier, items] of Object.entries(eloToTiers(ratings))) {
         const tierDiv = document.createElement("div");
         tierDiv.classList.add("tier", `tier-${tier.toLowerCase()}`);
 
@@ -47,6 +104,10 @@ function renderPlayerTierList(playerId, tiers) {
             itemDiv.classList.add("item");
             const img = document.createElement("img");
             img.src = `/static/images/${item.name}.png`;
+            img.dataset.name = item.name;
+            img.classList.add(playerId.toLowerCase());
+            img.onclick = () => highlightImages(playerId, item.id);
+
             itemDiv.appendChild(img);
             const ratingText = document.createElement("p");
             ratingText.classList.add("item-rating");
@@ -60,6 +121,36 @@ function renderPlayerTierList(playerId, tiers) {
         tierDiv.appendChild(tierItemsContainer);
         tierListContainer.appendChild(tierDiv);
     }
+}
+
+function highlightImages(playerId, id) {
+    document
+        .querySelectorAll(".highlight")
+        .forEach((el) => el.classList.remove("highlight"));
+
+    const otherPlayerId = playerId == "P1" ? "P2" : "P1";
+
+    const referenceCharacter = _tierList[playerId][id];
+    const closestCharacter =
+        CHARACTERS[
+            Object.entries(_tierList[otherPlayerId]).reduce(
+                (closest, [index, character]) => {
+                    const delta = Math.abs(
+                        character.elo - referenceCharacter.elo
+                    );
+                    return delta < closest.delta ? { index, delta } : closest;
+                },
+                { index: null, delta: Infinity }
+            ).index
+        ];
+
+    document
+        .querySelectorAll(
+            `img[data-name="${
+                CHARACTERS[id]
+            }"].${playerId.toLowerCase()}, img[data-name="${closestCharacter}"].${otherPlayerId.toLowerCase()}`
+        )
+        .forEach((img) => img.classList.add("highlight"));
 }
 
 function alignTiers(tierNames) {
