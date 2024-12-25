@@ -10,6 +10,7 @@
     <style>
         table {
             border-collapse: collapse;
+            max-height: 10vh;
         }
 
         th,
@@ -62,52 +63,96 @@
         .nan {
             background-color: #000000;
         }
+
+        .matchup-pair-container {
+            display: flex;
+            flex-direction: row;
+            justify-content: space-evenly;
+            margin: 10px;
+        }
+        .matchup-pair-text {
+            min-width: 100px;
+            text-align: center;
+            font-size: large;
+            align-content: center;
+        }
     </style>
 </head>
 
 <body>
     <script>
-        document.addEventListener("DOMContentLoaded", () => {
-            fetchMatchups();
-        });
+        const CHARACTERS = [
+            "CAPTAIN_FALCON",
+            "DONKEY_KONG",
+            "FOX",
+            "GAME_AND_WATCH",
+            "KIRBY",
+            "BOWSER",
+            "LINK",
+            "LUIGI",
+            "MARIO",
+            "MARTH",
+            "MEWTWO",
+            "NESS",
+            "PEACH",
+            "PIKACHU",
+            "ICE_CLIMBERS",
+            "JIGGLYPUFF",
+            "SAMUS",
+            "YOSHI",
+            "ZELDA",
+            "SHEIK",
+            "FALCO",
+            "YOUNG_LINK",
+            "DR_MARIO",
+            "ROY",
+            "PICHU",
+            "GANONDORF",
+        ];
 
         const socket = io.connect("http://127.0.0.1:5000");
         socket.on("matchup_update", function (data) {
             console.log(data);
+            renderMatchupChart(data, "p1-matchup-chart");
+            renderMatchupChart(flipDiagonally(data).map(x => x.map(y => { return { "win_rate": 1 - y.win_rate, "matches": y.matches } })), "p2-matchup-chart");
+            renderClosestMatchups(data);
         });
 
+        function renderClosestMatchups(matchups) {
+            let matchupPairs = [];
+            for (let i = 0; i < matchups.length; i++) {
+                for (let j = 0; j < matchups.length; j++) {
+                    matchupPairs.push([CHARACTERS[j], CHARACTERS[i], matchups[i][j]["win_rate"] - 0.5, matchups[i][j]["matches"]]);
+                }
+            }
+            matchupPairs.sort((a,b) => {
+                const p2 = Math.abs(a[2])
+                const p1 = Math.abs(b[2])
+
+                if (isNaN(p2)) return 1;
+                if (isNaN(p1)) return -1;
+                if (p2 === p1) return b[3] - a[3];
+                return (p2 - p1 > 0) ? 1 : -1;
+            });
+            //matchup_pairs.sort((a,b) => a[2] - b[2]);
+            matchupPairs = matchupPairs.filter((a) => a[3] > 0);
+
+            const container = document.querySelector(".closest-matchup-items");
+            container.innerHTML = "";
+            const imgPair = document.getElementById("matchup-pair");
+
+            matchupPairs.forEach(matchup => {
+                const newPair = imgPair.content.cloneNode(true);
+                const text = newPair.querySelector(".matchup-pair-text");
+                text.innerText = `${Number((matchup[2]*100).toPrecision(2))}% (${matchup[3]})`;
+                const images = newPair.querySelectorAll(".matchup-pair-image");
+                images[0].src = `/static/images/${matchup[0]}.png`;
+                images[1].src = `/static/images/${matchup[1]}.png`;
+                container.appendChild(newPair);
+            });
+        }
+
         function renderMatchupChart(matchups, id) {
-            const characters = [
-                "CAPTAIN_FALCON",
-                "DONKEY_KONG",
-                "FOX",
-                "GAME_AND_WATCH",
-                "KIRBY",
-                "BOWSER",
-                "LINK",
-                "LUIGI",
-                "MARIO",
-                "MARTH",
-                "MEWTWO",
-                "NESS",
-                "PEACH",
-                "PIKACHU",
-                "ICE_CLIMBERS",
-                "JIGGLYPUFF",
-                "SAMUS",
-                "YOSHI",
-                "ZELDA",
-                "SHEIK",
-                "FALCO",
-                "YOUNG_LINK",
-                "DR_MARIO",
-                "ROY",
-                "PICHU",
-                "GANONDORF",
-            ];
-
-            console.log(matchups)
-
             const table = document.getElementById(id)
 
             // Create header.
@@ -115,7 +160,7 @@
             const td = document.createElement("td")
             headerRow.appendChild(td);
 
-            characters.forEach((character) => {
+            CHARACTERS.forEach((character) => {
                 const td = document.createElement("td")
                 const img = document.createElement("img");
                 img.src = `/static/images/${character}.png`;
@@ -123,6 +168,7 @@
                 headerRow.appendChild(td);
             })
 
+            table.querySelector(".matchup-chart-body").innerHTML = ""
             table.querySelector(".matchup-chart-body").appendChild(headerRow)
 
             // Create table rows dynamically
@@ -130,7 +176,7 @@
                 const row = document.createElement("tr")
                 const td = document.createElement("td")
                 const img = document.createElement("img");
-                img.src = `/static/images/${characters[index]}.png`;
+                img.src = `/static/images/${CHARACTERS[index]}.png`;
                 td.appendChild(img);
                 row.appendChild(td);
 
@@ -183,9 +229,8 @@
             try {
                 const response = await fetch("/matchups", { method: "GET" });
                 const data = await response.json();
-                console.log(data)
-                renderMatchupChart(data, "p1-matchup-chart")
-                renderMatchupChart(flipDiagonally(data).map(x => x.map(y => { return { "win_rate": 1 - y.win_rate, "matches": y.matches } })), "p2-matchup-chart")
+                renderMatchupChart(data, "p1-matchup-chart");
+                renderMatchupChart(flipDiagonally(data).map(x => x.map(y => { return { "win_rate": 1 - y.win_rate, "matches": y.matches } })), "p2-matchup-chart");
             } catch (error) {
                 console.error("Error fetching matchups:", error);
             }
@@ -203,6 +248,19 @@
         <table id="p1-matchup-chart">
             <tbody class="matchup-chart-body"></tbody>
         </table>
+        <div class="closest-matchup-container">
+            <h2>Closest matchups</h2>
+            <div class="closest-matchup-items">
+
+            </div>
+            <template id="matchup-pair">
+                <div class="matchup-pair-container">
+                    <img class="matchup-pair-image" src="">
+                    <div class="matchup-pair-text"></div>
+                    <img class="matchup-pair-image" src="">
+                </div>
+            </template>
+        </div>
         <table id="p2-matchup-chart">
             <tbody class="matchup-chart-body"></tbody>
         </table>
