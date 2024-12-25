@@ -1,10 +1,11 @@
+import eventlet
+eventlet.monkey_patch()
 import json
 import os
 
-import eventlet
+
 import numpy as np
 
-eventlet.monkey_patch()
 from datetime import datetime
 from pprint import pprint
 from typing import Dict, List, Tuple, Union
@@ -283,7 +284,7 @@ def update_matchups(P1, P2, weighted: bool = True):
             winrate = winrate1
     else:
         # weight_func = lambda x: 1.1 ** (1 - x)
-        weight_func = lambda x: np.e ** (-0.05 * (x - 1))
+        weight_func = lambda x: np.e ** (-0.1 * (x - 1))
 
         subset = games_df[
             (games_df["p1_character"] == P1["character"])
@@ -293,8 +294,11 @@ def update_matchups(P1, P2, weighted: bool = True):
         ]
 
         if not subset.empty:
-            weights = np.array([weight_func(i) for i in range(len(subset))])
+            weights = np.array([weight_func(i) for i in reversed(range(len(subset)))])
             winrate1 = (subset["p1_won"] * weights).sum() / weights.sum()
+
+            if not np.isnan(winrate1):
+                winrate = winrate1
 
     old_matches = matchup_chart[P1["character"]][P2["character"]]["matches"]
     matchup_chart[P1["character"]][P2["character"]] = {
@@ -348,6 +352,7 @@ def background_task() -> None:
 
             socketio.emit("tier_update", character_ratings)
             socketio.emit("results_update", last_results)
+            socketio.emit("matchup_update", matchup_chart)
 
         eventlet.sleep(0.5)
 

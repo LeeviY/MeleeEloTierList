@@ -49,7 +49,7 @@ function updateTierList(data) {
     renderPlayerTierList("P1", data.P1);
     renderPlayerTierList("P2", data.P2);
     alignTiers(
-        Object.keys(data.P1).map(
+        Object.keys(eloToTiers(data.P1)).map(
             Function.prototype.call,
             String.prototype.toLowerCase
         )
@@ -106,7 +106,7 @@ function renderPlayerTierList(playerId, ratings) {
             img.src = `/static/images/${item.name}.png`;
             img.dataset.name = item.name;
             img.classList.add(playerId.toLowerCase());
-            img.onclick = () => highlightImages(playerId, item.id);
+            img.onmouseover = () => highlightImages(playerId, item.id);
 
             itemDiv.appendChild(img);
             const ratingText = document.createElement("p");

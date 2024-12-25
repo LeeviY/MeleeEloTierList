@@ -89,7 +89,9 @@ def find_replay_directory() -> str:
 
 
 def date_from_replay_name(filename: str) -> str:
-    date = filename.split("_")[1].split(".")[0]
+    date_pattern = re.compile(r"\d{8}T\d{6}")
+    date = date_pattern.search(filename).group(0)
+
     return (
         datetime.strptime(date, "%Y%m%dT%H%M%S")
         .astimezone(pytz.timezone("Europe/Helsinki"))
