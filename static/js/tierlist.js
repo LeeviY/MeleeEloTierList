@@ -48,12 +48,7 @@ function updateTierList(data) {
     _tierList = data;
     renderPlayerTierList("P1", data.P1);
     renderPlayerTierList("P2", data.P2);
-    alignTiers(
-        Object.keys(eloToTiers(data.P1)).map(
-            Function.prototype.call,
-            String.prototype.toLowerCase
-        )
-    );
+    alignTiers(Object.keys(eloToTiers(data.P1)).map(Function.prototype.call, String.prototype.toLowerCase));
 }
 
 function eloToTiers(characters) {
@@ -80,9 +75,7 @@ function eloToTiers(characters) {
 }
 
 function renderPlayerTierList(playerId, ratings) {
-    const tierListContainer = document.getElementById(
-        `tier-list-${playerId.toLowerCase()}`
-    );
+    const tierListContainer = document.getElementById(`tier-list-${playerId.toLowerCase()}`);
     tierListContainer.innerHTML = "";
 
     for (const [tier, items] of Object.entries(eloToTiers(ratings))) {
@@ -111,9 +104,7 @@ function renderPlayerTierList(playerId, ratings) {
             itemDiv.appendChild(img);
             const ratingText = document.createElement("p");
             ratingText.classList.add("item-rating");
-            ratingText.textContent = `${Math.round(item.rating)}(${
-                item.matches
-            })`;
+            ratingText.textContent = `${Math.round(item.rating)}(${item.matches})`;
             itemDiv.appendChild(ratingText);
             tierItemsContainer.appendChild(itemDiv);
         });
@@ -124,9 +115,7 @@ function renderPlayerTierList(playerId, ratings) {
 }
 
 function highlightImages(playerId, id) {
-    document
-        .querySelectorAll(".highlight")
-        .forEach((el) => el.classList.remove("highlight"));
+    document.querySelectorAll(".highlight").forEach((el) => el.classList.remove("highlight"));
 
     const otherPlayerId = playerId == "P1" ? "P2" : "P1";
 
@@ -135,9 +124,7 @@ function highlightImages(playerId, id) {
         CHARACTERS[
             Object.entries(_tierList[otherPlayerId]).reduce(
                 (closest, [index, character]) => {
-                    const delta = Math.abs(
-                        character.elo - referenceCharacter.elo
-                    );
+                    const delta = Math.abs(character.elo - referenceCharacter.elo);
                     return delta < closest.delta ? { index, delta } : closest;
                 },
                 { index: null, delta: Infinity }
@@ -168,9 +155,7 @@ function alignTiers(tierNames) {
         });
 
         tiers.forEach((tier) => {
-            tier.querySelector(
-                ".tier-items"
-            ).style.minHeight = `${maxHeight}px`;
+            tier.querySelector(".tier-items").style.minHeight = `${maxHeight}px`;
         });
     });
 }
@@ -205,9 +190,7 @@ function renderLastResults(results) {
 let selectedPorts = { P1: null, P2: null };
 
 function highlightActivePort(player, port) {
-    const buttonsContainer = document.getElementById(
-        `port-buttons-${player.toLowerCase()}`
-    );
+    const buttonsContainer = document.getElementById(`port-buttons-${player.toLowerCase()}`);
     const buttons = buttonsContainer.querySelectorAll("button");
 
     buttons.forEach((button) => {
@@ -271,9 +254,7 @@ function toggleAllowExit() {
         .then((response) => response.json())
         .then((data) => {
             ALLOW_EXIT = !ALLOW_EXIT;
-            document.getElementById(
-                "allow-exit-button"
-            ).innerText = `Allow Quitting: ${ALLOW_EXIT}`;
+            document.getElementById("allow-exit-button").innerText = `Allow Quitting: ${ALLOW_EXIT}`;
             console.log(data);
         })
         .catch((err) => {

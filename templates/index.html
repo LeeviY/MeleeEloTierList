@@ -1,80 +1,84 @@
 <!DOCTYPE html>
 <html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Tier List Viewer</title>
+        <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
+        <script src="static/js/tierlist.js"></script>
+        <script src="static/js/reset.js"></script>
+        <link rel="stylesheet" href="static/css/tierlist-styles.css" />
+    </head>
 
-<head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Tier List Viewer</title>
-    <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
-    <script src="static/js/scripts.js"></script>
-    <script src="static/js/reset.js"></script>
-    <link rel="stylesheet" href="static/css/styles.css" />
-</head>
-
-<body>
-    <div class="navbar">
-        <a href="#">Tier List (elo)</a>
-        <a href="#">Tier List (stocks)</a>
-        <a href="matchup_chart">Matchup Chart</a>
-    </div>
-    <div class="container">
-        <!-- Player 1's Tier List -->
-        <div class="tier-list-container">
-            <div class="tier-list-header">
-                <h2 class="tier-list-title">Player 1</h2>
-                <div class="port-buttons-container" id="port-buttons-p1">
-                    <button onclick="handlePortClick('P1', 1, this)">1</button>
-                    <button onclick="handlePortClick('P1', 2, this)">2</button>
-                    <button onclick="handlePortClick('P1', 3, this)">3</button>
-                    <button onclick="handlePortClick('P1', 4, this)">4</button>
+    <body>
+        <div class="navbar">
+            <a href="#">Tier List (elo)</a>
+            <a href="#">Tier List (stocks)</a>
+            <a href="matchup_chart">Matchup Chart</a>
+        </div>
+        <div class="container">
+            <!-- Player 1's Tier List -->
+            <div class="tier-list-container">
+                <div class="tier-list-header">
+                    <h2 class="tier-list-title">Player 1</h2>
+                    <div class="port-buttons-container" id="port-buttons-p1">
+                        <button onclick="handlePortClick('P1', 1, this)">1</button>
+                        <button onclick="handlePortClick('P1', 2, this)">2</button>
+                        <button onclick="handlePortClick('P1', 3, this)">3</button>
+                        <button onclick="handlePortClick('P1', 4, this)">4</button>
+                    </div>
+                    <button
+                        class="random-character-button"
+                        onclick="highlightImages('P1', Math.floor(Math.random() * 26))"
+                    >
+                        Random
+                    </button>
                 </div>
-                <button class="random-character-button"
-                    onclick="highlightImages('P1', Math.floor(Math.random() * 26))">Random</button>
-            </div>
-            <div class="tier-list" id="tier-list-p1">
-                <p>Loading tier list...</p>
-            </div>
-        </div>
-
-        <div class="results-container">
-            <h2>Results</h2>
-            <div class="result-items">
-
-            </div>
-        </div>
-
-        <!-- Player 2's Tier List -->
-        <div class="tier-list-container">
-            <div class="tier-list-header">
-                <h2 class="tier-list-title">Player 2</h2>
-                <div class="port-buttons-container" id="port-buttons-p2">
-                    <button onclick="handlePortClick('P2', 1, this)">1</button>
-                    <button onclick="handlePortClick('P2', 2, this)">2</button>
-                    <button onclick="handlePortClick('P2', 3, this)">3</button>
-                    <button onclick="handlePortClick('P2', 4, this)">4</button>
+                <div class="tier-list" id="tier-list-p1">
+                    <p>Loading tier list...</p>
                 </div>
-                <button class="random-character-button"
-                    onclick="highlightImages('P2', Math.floor(Math.random() * 26))">Random</button>
             </div>
-            <div class="tier-list" id="tier-list-p2">
-                <p>Loading tier list...</p>
-            </div>
-        </div>
-    </div>
-    <div class="action-buttons collapsed">
-        <div class="menu-content">
-            <button id="allow-exit-button" onclick="toggleAllowExit()">Allow Quitting: false</button>
-            <button onclick="resetTierList()">Reset Tier List</button>
-            <button onclick="recalculateTierList()">Recalculate Tier List</button>
-            <div class="date-range-selection">
-                <label for="start-date">From:</label>
-                <input type="date" id="start-date" onchange="" />
-                <label for="end-date">To:</label>
-                <input type="date" id="end-date" onchange="" />
-            </div>
-        </div>
-        <button class="toggle-button" onclick="toggleActionMenu()">≡</button>
-    </div>
-</body>
 
+            <div class="results-container">
+                <h2>Results</h2>
+                <div class="result-items"></div>
+            </div>
+
+            <!-- Player 2's Tier List -->
+            <div class="tier-list-container">
+                <div class="tier-list-header">
+                    <h2 class="tier-list-title">Player 2</h2>
+                    <div class="port-buttons-container" id="port-buttons-p2">
+                        <button onclick="handlePortClick('P2', 1, this)">1</button>
+                        <button onclick="handlePortClick('P2', 2, this)">2</button>
+                        <button onclick="handlePortClick('P2', 3, this)">3</button>
+                        <button onclick="handlePortClick('P2', 4, this)">4</button>
+                    </div>
+                    <button
+                        class="random-character-button"
+                        onclick="highlightImages('P2', Math.floor(Math.random() * 26))"
+                    >
+                        Random
+                    </button>
+                </div>
+                <div class="tier-list" id="tier-list-p2">
+                    <p>Loading tier list...</p>
+                </div>
+            </div>
+        </div>
+        <div class="action-buttons collapsed">
+            <div class="menu-content">
+                <button id="allow-exit-button" onclick="toggleAllowExit()">Allow Quitting: false</button>
+                <button onclick="resetTierList()">Reset Tier List</button>
+                <button onclick="recalculateTierList()">Recalculate Tier List</button>
+                <div class="date-range-selection">
+                    <label for="start-date">From:</label>
+                    <input type="date" id="start-date" onchange="" />
+                    <label for="end-date">To:</label>
+                    <input type="date" id="end-date" onchange="" />
+                </div>
+            </div>
+            <button class="toggle-button" onclick="toggleActionMenu()">≡</button>
+        </div>
+    </body>
 </html>

@@ -1,15 +1,13 @@
 import eventlet
+
 eventlet.monkey_patch()
 import json
 import os
-
-
-import numpy as np
-
 from datetime import datetime
 from pprint import pprint
 from typing import Dict, List, Tuple, Union
 
+import numpy as np
 import pandas as pd
 from flask import Flask, jsonify, render_template, request
 from flask_socketio import SocketIO, emit
@@ -146,10 +144,16 @@ def set_date_range():
 
 
 @socketio.on("connect")
-def handle_connect():
+def emit_all():
     emit("tier_update", character_ratings)
     emit("results_update", last_results)
-    emit("matchup_update", matchup_chart)
+    emit(
+        "matchup_update",
+        {
+            "chart": matchup_chart,
+            "winner": "P1" if games_df.tail(1).squeeze()["p1_won"] else "P2",
+        },
+    )
 
 
 ### Logic
@@ -350,9 +354,7 @@ def background_task() -> None:
 
             process_new_replay(path)
 
-            socketio.emit("tier_update", character_ratings)
-            socketio.emit("results_update", last_results)
-            socketio.emit("matchup_update", matchup_chart)
+            emit_all()
 
         eventlet.sleep(0.5)
 

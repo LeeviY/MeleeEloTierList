@@ -1,0 +1,79 @@
+table {
+    border-collapse: collapse;
+    max-height: 10vh;
+}
+
+th,
+td {
+    border: 1px solid #000;
+    text-align: center;
+    padding: 2px;
+    font-size: 0.7em;
+    color: #000;
+    width: 26px;
+    height: 26px;
+}
+
+th img,
+td img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+th {
+    background-color: #f2f2f2;
+}
+
+.match-number {
+    font-size: 8px;
+    margin: 0;
+}
+
+.low {
+    background-color: #ff9999;
+}
+
+.medium-low {
+    background-color: #ffcc99;
+}
+
+.medium {
+    background-color: #ffff99;
+}
+
+.medium-high {
+    background-color: #ccff99;
+}
+
+.high {
+    background-color: #99ff99;
+}
+
+.nan {
+    background-color: #000000;
+}
+
+.matchup-pair-container {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-evenly;
+    margin: 4px;
+}
+
+.matchup-pair-text {
+    min-width: 80px;
+    text-align: center;
+    font-size: 10pt;
+    align-content: center;
+}
+
+.winner-text {
+    text-align: center;
+    align-content: center;
+}
+
+.matchup-pair-image {
+    width: 30px;
+    height: 30px;
+}
