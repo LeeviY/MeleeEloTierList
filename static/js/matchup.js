@@ -86,7 +86,7 @@ function renderClosestMatchups(matchups) {
 
 function renderRandomMatchups(matchups) {
     const matchupPairs = matchups.map((row, i) => {
-        const weights = row.map(({ win_rate, matches }) => (matches < 10 ? 1 : 1 - Math.abs(win_rate - 0.5) * 2));
+        const weights = row.map(({ win_rate, matches }) => (matches < 5 ? 1 : 1 - (Math.abs(win_rate - 0.5) * 2) ** 3));
         const weightsSum = weights.reduce((sum, w) => sum + w, 0);
         const random = Math.random();
         const chosen = weights
