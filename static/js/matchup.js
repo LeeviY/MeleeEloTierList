@@ -42,9 +42,17 @@ socket.on("matchup_update", function (data) {
 });
 
 function flipMatchupChart(matchupChart) {
-    return matchupChart
-        .map((row, i) => row.map((_, j) => (j > i ? matchupChart[j][i] : matchupChart[i][j]))) // Invert diagonally
-        .map((row) => row.map(({ win_rate, matches }) => ({ win_rate: 1 - win_rate, matches }))); // Invert win ratio
+    return flipDiagonally(matchupChart)
+    .map((row) => row.map(({ win_rate, matches }) => ({ win_rate: 1 - win_rate, matches }))); // Invert win ratio
+}
+
+function flipDiagonally(matrix) {
+    for (let i = 0; i < matrix.length; i++) {
+        for (let j = i + 1; j < matrix.length; j++) {
+            [matrix[i][j], matrix[j][i]] = [matrix[j][i], matrix[i][j]];
+        }
+    }
+    return matrix;
 }
 
 function chooseMatchupPairRender(matchups, winner) {
