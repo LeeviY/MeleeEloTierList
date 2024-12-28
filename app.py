@@ -150,7 +150,7 @@ def emit_all():
     emit(
         "matchup_update",
         {
-            "chart": matchup_chart,
+            "matchups": matchup_chart,
             "winner": "P1" if games_df.tail(1).squeeze()["p1_won"] else "P2",
         },
     )

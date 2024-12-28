@@ -27,7 +27,7 @@ const CHARACTERS = [
     "GANONDORF",
 ];
 
-let renderTypeIndex = 0;
+let renderTypeIndex = 1;
 const renderFunctions = [renderClosestMatchups, renderRandomMatchups];
 let matchupData = null;
 
@@ -35,14 +35,31 @@ const socket = io.connect("http://127.0.0.1:5000");
 socket.on("matchup_update", function (data) {
     console.log(data);
     matchupData = data;
-    const { chart, winner } = data;
-    const flippedChart = flipDiagonally(chart).map((row) =>
-        row.map(({ win_rate, matches }) => ({ win_rate: 1 - win_rate, matches }))
-    );
-    renderMatchupChart(chart, "p1-matchup-chart");
-    renderMatchupChart(flippedChart, "p2-matchup-chart");
-    renderFunctions[renderTypeIndex](winner === "P1" || !renderTypeIndex ? chart : flippedChart, winner);
+    const { matchups, winner } = data;
+    renderMatchupChart(matchups, "p1-matchup-chart");
+    renderMatchupChart(flipMatchupChart(matchups), "p2-matchup-chart");
+    chooseMatchupPairRender(matchups, winner);
 });
+
+function flipMatchupChart(matchupChart) {
+    return matchupChart
+        .map((row, i) => row.map((_, j) => (j > i ? matchupChart[j][i] : matchupChart[i][j]))) // Invert diagonally
+        .map((row) => row.map(({ win_rate, matches }) => ({ win_rate: 1 - win_rate, matches }))); // Invert win ratio
+}
+
+function chooseMatchupPairRender(matchups, winner) {
+    const p1Won = winner === "P1";
+    document.querySelector(".winner-text").innerText = `${p1Won ? "P2" : "P1"} Chooses`;
+    renderFunctions[renderTypeIndex](p1Won || !renderTypeIndex ? matchups : flipMatchupChart(matchups));
+}
+
+function incrementMatchupPairRenderFunction() {
+    renderTypeIndex++;
+    renderTypeIndex %= 2;
+    if (!matchupData) return;
+    const { matchups, winner } = matchupData;
+    chooseMatchupPairRender(matchups, winner);
+}
 
 function renderClosestMatchups(matchups) {
     const matchupPairs = matchups.flatMap((row, i) =>
@@ -59,29 +76,20 @@ function renderClosestMatchups(matchups) {
     renderMatchupPairs(matchupPairs.filter((a) => a[3] > 0));
 }
 
-function weightedRandom(items, weights) {
-    const cumulativeWeights = weights.reduce((acc, weight) => {
-        acc.push((acc.at(-1) || 0) + weight);
-        return acc;
-    }, []);
-    const random = Math.random() * cumulativeWeights.at(-1);
-    return cumulativeWeights.findIndex((cw) => random < cw);
-}
-
-function renderRandomMatchups(matchups, winner) {
+function renderRandomMatchups(matchups) {
     const matchupPairs = matchups.map((row, i) => {
-        const weights = row.map(({ win_rate: winRate, matches }) =>
-            matches < 10 ? 1 : 1 - Math.abs(winRate - 0.5) * 2
-        );
-        const weightSum = weights.reduce((sum, w) => sum + w, 0);
-        const chosen = weightedRandom(
-            row,
-            weights.map((w) => w / weightSum)
-        );
+        const weights = row.map(({ win_rate, matches }) => (matches < 10 ? 1 : 1 - Math.abs(win_rate - 0.5) * 2));
+        const weightsSum = weights.reduce((sum, w) => sum + w, 0);
+        const random = Math.random();
+        const chosen = weights
+            .reduce((acc, weight) => {
+                acc.push((acc.at(-1) || 0) + weight / weightsSum);
+                return acc;
+            }, [])
+            .findIndex((cw) => random < cw);
         return [CHARACTERS[i], CHARACTERS[chosen], 0.5 - row[chosen]["win_rate"], row[chosen]["matches"]];
     });
 
-    document.querySelector(".winner-text").innerText = `${winner === "P1" ? "P2" : "P1"} Chooses`;
     renderMatchupPairs(matchupPairs);
 }
 
@@ -134,19 +142,17 @@ function renderMatchupChart(matchups, id) {
             const td = document.createElement("td");
             const winRate = x.win_rate;
             td.innerText = Math.round(winRate * 100) / 100;
-            if (winRate < 0.2) {
-                td.className = "low";
-            } else if (winRate >= 0.2 && winRate < 0.4) {
-                td.className = "medium-low";
-            } else if (winRate >= 0.4 && winRate < 0.6) {
-                td.className = "medium";
-            } else if (winRate >= 0.6 && winRate < 0.8) {
-                td.className = "medium-high";
-            } else if (winRate >= 0.8 && winRate <= 1) {
-                td.className = "high";
-            } else {
-                td.className = "nan";
-            }
+            // const classMap = [
+            //     { threshold: 0.2, className: "low" },
+            //     { threshold: 0.4, className: "medium-low" },
+            //     { threshold: 0.6, className: "medium" },
+            //     { threshold: 0.8, className: "medium-high" },
+            //     { threshold: 1, className: "high" },
+            // ];
+
+            // td.className = classMap.find(({ threshold }) => winRate <= threshold)?.className || "nan";
+            const color = isNaN(winRate) ? "#000000" : hsv2rgb(Math.floor(winRate * 120), 0.6, 1);
+            td.style.backgroundColor = color;
 
             const h5 = document.createElement("h5");
             h5.innerText = `(${x.matches})`;
@@ -160,46 +166,52 @@ function renderMatchupChart(matchups, id) {
     }
 }
 
-function flipDiagonally(matrix) {
-    for (let i = 0; i < matrix.length; i++) {
-        for (let j = i + 1; j < matrix.length; j++) {
-            [matrix[i][j], matrix[j][i]] = [matrix[j][i], matrix[i][j]];
-        }
+const hsv2rgb = (h, s, v) => {
+    if (s === 0) {
+        return `#${Math.round(v * 255)
+            .toString(16)
+            .padStart(2, "0")
+            .repeat(3)}`;
     }
-    return matrix;
-}
 
-async function fetchMatchups() {
-    try {
-        const response = await fetch("/matchups", {
-            method: "GET",
-        });
-        const data = await response.json();
-        renderMatchupChart(data, "p1-matchup-chart");
-        renderMatchupChart(
-            flipDiagonally(data).map((x) =>
-                x.map((y) => {
-                    return {
-                        win_rate: 1 - y.win_rate,
-                        matches: y.matches,
-                    };
-                })
-            ),
-            "p2-matchup-chart"
-        );
-    } catch (error) {
-        console.error("Error fetching matchups:", error);
+    h /= 60;
+    const i = Math.floor(h);
+    const f = h - i;
+    const p = v * (1 - s);
+    const q = v * (1 - s * f);
+    const t = v * (1 - s * (1 - f));
+
+    let rgb;
+    switch (i) {
+        case 0:
+            rgb = [v, t, p];
+            break;
+        case 1:
+            rgb = [q, v, p];
+            break;
+        case 2:
+            rgb = [p, v, t];
+            break;
+        case 3:
+            rgb = [p, q, v];
+            break;
+        case 4:
+            rgb = [t, p, v];
+            break;
+        default:
+            rgb = [v, p, q];
+            break;
     }
-}
+
+    return `#${rgb
+        .map((x) =>
+            Math.round(x * 255)
+                .toString(16)
+                .padStart(2, "0")
+        )
+        .join("")}`;
+};
 
 function toggleActionMenu() {
     document.querySelector(".action-buttons").classList.toggle("collapsed");
-}
-
-function incrementMatchupPairRenderFunction() {
-    renderTypeIndex++;
-    renderTypeIndex %= 2;
-    if (!matchupData) return;
-    const { chart, winner } = matchupData;
-    renderFunctions[renderTypeIndex](winner === "P1" || !renderTypeIndex ? chart : flippedChart, winner);
 }

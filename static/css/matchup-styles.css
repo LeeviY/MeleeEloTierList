@@ -30,30 +30,6 @@ th {
     margin: 0;
 }
 
-.low {
-    background-color: #ff9999;
-}
-
-.medium-low {
-    background-color: #ffcc99;
-}
-
-.medium {
-    background-color: #ffff99;
-}
-
-.medium-high {
-    background-color: #ccff99;
-}
-
-.high {
-    background-color: #99ff99;
-}
-
-.nan {
-    background-color: #000000;
-}
-
 .matchup-pair-container {
     display: flex;
     flex-direction: row;
