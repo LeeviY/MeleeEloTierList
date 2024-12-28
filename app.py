@@ -145,9 +145,9 @@ def set_date_range():
 
 @socketio.on("connect")
 def emit_all():
-    emit("tier_update", character_ratings)
-    emit("results_update", last_results)
-    emit(
+    socketio.emit("tier_update", character_ratings)
+    socketio.emit("results_update", last_results)
+    socketio.emit(
         "matchup_update",
         {
             "matchups": matchup_chart,
