@@ -27,23 +27,99 @@ const CHARACTERS = [
     "GANONDORF",
 ];
 
-let renderTypeIndex = 1;
-const renderFunctions = [renderClosestMatchups, renderRandomMatchups];
+let characterMask;
+if (!localStorage.getItem("characterMask")) {
+    characterMask = new Array(26).fill(true);
+    localStorage.setItem("characterMask", JSON.stringify(characterMask));
+} else {
+    characterMask = JSON.parse(localStorage.getItem("characterMask"));
+}
+
+let renderTypeIndex = 0;
+
 let matchupData = null;
 
 const socket = io.connect("http://127.0.0.1:5000");
 socket.on("matchup_update", function (data) {
     console.log(data);
     matchupData = data;
-    const { matchups, winner } = data;
-    renderMatchupChart(matchups, "p1-matchup-chart");
-    renderMatchupChart(flipMatchupChart(matchups), "p2-matchup-chart");
-    chooseMatchupPairRender(matchups, winner);
+    populateDropdown();
+    reRender(data);
 });
 
+function reRender(data) {
+    const { matchups, winner } = data;
+
+    const namedMatchups = mapCharacterNames(matchups);
+
+    const maskIndices = characterMask.map((x, i) => (!x ? i : -1)).filter((i) => i != -1);
+    const filteredMatchups = remove(namedMatchups, maskIndices, maskIndices);
+
+    console.log(filteredMatchups);
+
+    const rowOrder = calculateSortedIndices(filteredMatchups);
+    const colOrder = calculateSortedIndices(
+        flipMatchupChart(JSON.parse(JSON.stringify(filteredMatchups)))
+    );
+
+    const sortedMatchups = reorder(filteredMatchups, rowOrder, colOrder);
+
+    renderMatchupChart(sortedMatchups, "p1-matchup-chart");
+    chooseMatchupPairRender(filteredMatchups, winner);
+}
+
+function calculateSortedIndices(matchups) {
+    return matchups
+        .map((row, i) => {
+            const { wins, matches } = row.reduce(
+                (acc, x) =>
+                    !isNaN(x.data.win_rate)
+                        ? {
+                              wins: acc.wins + x.data.win_rate * x.data.matches,
+                              matches: acc.matches + x.data.matches,
+                          }
+                        : acc,
+                { wins: 0, matches: 0 }
+            );
+            return [i, wins / matches];
+        })
+        .sort((a, b) => b[1] - a[1])
+        .map((x) => x[0]);
+}
+
+function mapCharacterNames(matchups) {
+    return matchups.map((row, i) => {
+        return row.map((col, j) => {
+            return { with: CHARACTERS[i], against: CHARACTERS[j], data: col };
+        });
+    });
+}
+
+function reorder(input, rowIndices, columnIndices) {
+    return rowIndices
+        .map((i) => input[i])
+        .map((row) => {
+            return columnIndices.map((i) => row[i]);
+        });
+}
+
+function remove(input, rowIndices, colIndices) {
+    input = input.filter((_, rowIndex) => !rowIndices.includes(rowIndex));
+    return input.map((row) => {
+        return row.filter((_, colIndex) => !colIndices.includes(colIndex));
+    });
+}
+
 function flipMatchupChart(matchupChart) {
-    return flipDiagonally(matchupChart)
-    .map((row) => row.map(({ win_rate, matches }) => ({ win_rate: 1 - win_rate, matches }))); // Invert win ratio
+    return flipDiagonally(matchupChart).map((row) => {
+        return row.map((x) => {
+            return {
+                with: x.against,
+                against: x.with,
+                data: { win_rate: 1 - x.data.win_rate, matches: x.data.matches },
+            };
+        });
+    });
 }
 
 function flipDiagonally(matrix) {
@@ -58,51 +134,60 @@ function flipDiagonally(matrix) {
 function chooseMatchupPairRender(matchups, winner) {
     const p1Won = winner === "P1";
     document.querySelector(".winner-text").innerText = `${p1Won ? "P2" : "P1"} Chooses`;
-    renderFunctions[renderTypeIndex](p1Won || !renderTypeIndex ? matchups : flipMatchupChart(matchups));
+    renderClosestMatchups(matchups);
+    renderRandomMatchups(!p1Won ? matchups : flipMatchupChart(matchups));
 }
 
-function incrementMatchupPairRenderFunction() {
-    renderTypeIndex++;
-    renderTypeIndex %= 2;
-    if (!matchupData) return;
-    const { matchups, winner } = matchupData;
-    chooseMatchupPairRender(matchups, winner);
-}
+// function incrementMatchupPairRenderFunction() {
+//     renderTypeIndex++;
+//     renderTypeIndex %= 2;
+//     if (!matchupData) return;
+//     reRender(matchupData);
+// }
 
 function renderClosestMatchups(matchups) {
-    const matchupPairs = matchups.flatMap((row, i) =>
-        row.map((data, j) => [CHARACTERS[j], CHARACTERS[i], data["win_rate"] - 0.5, data["matches"]])
+    const matchupPairs = matchups.flatMap((row) =>
+        row.map((col) => [col.with, col.against, col.data.win_rate - 0.5, col.data.matches])
     );
 
     matchupPairs.sort((a, b) => {
         const p2 = Math.abs(a[2]);
         const p1 = Math.abs(b[2]);
-
         return isNaN(p2) - isNaN(p1) || p2 - p1 || b[3] - a[3];
     });
 
-    renderMatchupPairs(matchupPairs.filter((a) => a[3] > 0));
+    renderMatchupPairs(
+        matchupPairs.filter((a) => a[3] > 0),
+        "closest-matchup-container"
+    );
 }
 
 function renderRandomMatchups(matchups) {
     const matchupPairs = matchups.map((row, i) => {
-        const weights = row.map(({ win_rate, matches }) => (matches < 5 ? 1 : 1 - (Math.abs(win_rate - 0.5) * 2) ** 3));
+        const weights = row.map((col) => {
+            return col.data.matches < 5 ? 1 : 1 - (Math.abs(col.data.win_rate - 0.5) * 2) ** 4;
+        });
         const weightsSum = weights.reduce((sum, w) => sum + w, 0);
         const random = Math.random();
-        const chosen = weights
+        const opponent = weights
             .reduce((acc, weight) => {
                 acc.push((acc.at(-1) || 0) + weight / weightsSum);
                 return acc;
             }, [])
             .findIndex((cw) => random < cw);
-        return [CHARACTERS[i], CHARACTERS[chosen], 0.5 - row[chosen]["win_rate"], row[chosen]["matches"]];
+        return [
+            row[opponent].with,
+            row[opponent].against,
+            row[opponent].data["win_rate"] - 0.5,
+            row[opponent].data["matches"],
+        ];
     });
 
-    renderMatchupPairs(matchupPairs);
+    renderMatchupPairs(matchupPairs, "random-matchup-container");
 }
 
-function renderMatchupPairs(pairs) {
-    const container = document.querySelector(".closest-matchup-items");
+function renderMatchupPairs(pairs, id) {
+    const container = document.getElementById(id).querySelector(".matchup-items");
     container.innerHTML = "";
     const imgPair = document.getElementById("matchup-pair");
 
@@ -122,56 +207,45 @@ function renderMatchupChart(matchups, id) {
     const body = table.querySelector(".matchup-chart-body");
     body.innerHTML = "";
 
-    // Create header.
     const headerRow = document.createElement("tr");
     const td = document.createElement("td");
     headerRow.appendChild(td);
 
-    CHARACTERS.forEach((character) => {
+    matchups[0].forEach((col) => {
         const td = document.createElement("td");
         const img = document.createElement("img");
-        img.src = `/static/images/${character}.png`;
+        img.src = `/static/images/${col.against}.png`;
         td.appendChild(img);
         headerRow.appendChild(td);
     });
 
     body.appendChild(headerRow);
 
-    // Create table rows dynamically
-    for (const [index, element] of matchups.entries()) {
-        const row = document.createElement("tr");
+    matchups.forEach((row) => {
+        const tableRow = document.createElement("tr");
         const td = document.createElement("td");
         const img = document.createElement("img");
-        img.src = `/static/images/${CHARACTERS[index]}.png`;
+        img.src = `/static/images/${row[0].with}.png`;
         td.appendChild(img);
-        row.appendChild(td);
+        tableRow.appendChild(td);
 
-        element.forEach((x) => {
+        row.forEach((x) => {
             const td = document.createElement("td");
-            const winRate = x.win_rate;
+            const winRate = x.data.win_rate;
             td.innerText = Math.round(winRate * 100) / 100;
-            // const classMap = [
-            //     { threshold: 0.2, className: "low" },
-            //     { threshold: 0.4, className: "medium-low" },
-            //     { threshold: 0.6, className: "medium" },
-            //     { threshold: 0.8, className: "medium-high" },
-            //     { threshold: 1, className: "high" },
-            // ];
-
-            // td.className = classMap.find(({ threshold }) => winRate <= threshold)?.className || "nan";
             const color = isNaN(winRate) ? "#000000" : hsv2rgb(Math.floor(winRate * 120), 0.6, 1);
             td.style.backgroundColor = color;
 
             const h5 = document.createElement("h5");
-            h5.innerText = `(${x.matches})`;
+            h5.innerText = `(${x.data.matches})`;
             h5.classList.add("match-number");
             td.appendChild(h5);
 
-            row.appendChild(td);
+            tableRow.appendChild(td);
         });
 
-        table.querySelector(".matchup-chart-body").appendChild(row);
-    }
+        table.querySelector(".matchup-chart-body").appendChild(tableRow);
+    });
 }
 
 const hsv2rgb = (h, s, v) => {
@@ -222,4 +296,32 @@ const hsv2rgb = (h, s, v) => {
 
 function toggleActionMenu() {
     document.querySelector(".action-buttons").classList.toggle("collapsed");
+}
+
+function populateDropdown() {
+    const characterMask = JSON.parse(localStorage.getItem("characterMask"));
+    const dropdownMenu = document.getElementById("dropdown-menu");
+    dropdownMenu.innerHTML = "";
+    CHARACTERS.forEach((item, index) => {
+        const li = document.createElement("li");
+        li.textContent = item;
+        li.onclick = () => toggleItem(index, li);
+        li.classList.add("dropdown-item");
+        if (characterMask[index]) li.classList.add("toggled");
+        dropdownMenu.appendChild(li);
+    });
+}
+
+function toggleDropdown() {
+    const dropdownMenu = document.getElementById("dropdown-menu");
+    dropdownMenu.classList.toggle("visible");
+}
+
+function toggleItem(index, element) {
+    console.log(`Toggled item ${index}: ${CHARACTERS[index]}`);
+    element.classList.toggle("toggled");
+    characterMask[index] = element.classList.contains("toggled");
+    console.log(characterMask);
+    localStorage.setItem("characterMask", JSON.stringify(characterMask));
+    if (matchupData) reRender(matchupData);
 }

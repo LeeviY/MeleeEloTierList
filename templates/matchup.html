@@ -16,14 +16,14 @@
             <a href="matchup_chart">Matchup Chart</a>
         </div>
         <h1>Character Matchup Chart</h1>
+        <div class="winner-text"></div>
         <div class="container">
             <table id="p1-matchup-chart">
                 <tbody class="matchup-chart-body"></tbody>
             </table>
-            <div class="closest-matchup-container">
-                <!-- <h2>Closest matchups</h2> -->
-                <div class="winner-text"></div>
-                <div class="closest-matchup-items"></div>
+            <div id="random-matchup-container" class="matchup-container">
+                <h2>Random Matchups</h2>
+                <div class="matchup-items"></div>
                 <template id="matchup-pair">
                     <div class="matchup-pair-container">
                         <img class="matchup-pair-image" src="" />
@@ -32,13 +32,28 @@
                     </div>
                 </template>
             </div>
-            <table id="p2-matchup-chart">
+            <div id="closest-matchup-container" class="matchup-container">
+                <h2>Closest Matchups</h2>
+                <div class="matchup-items"></div>
+                <template id="matchup-pair">
+                    <div class="matchup-pair-container">
+                        <img class="matchup-pair-image" src="" />
+                        <div class="matchup-pair-text"></div>
+                        <img class="matchup-pair-image" src="" />
+                    </div>
+                </template>
+            </div>
+            <!-- <table id="p2-matchup-chart">
                 <tbody class="matchup-chart-body"></tbody>
-            </table>
+            </table> -->
         </div>
         <div class="action-buttons collapsed">
             <div class="menu-content">
-                <button onclick="incrementMatchupPairRenderFunction()">Switch</button>
+                <!-- <button onclick="incrementMatchupPairRenderFunction()">Switch</button> -->
+                <div class="dropdown">
+                    <button class="dropdown-toggle" onclick="toggleDropdown()">Characters</button>
+                    <ul id="dropdown-menu" class="dropdown-menu"></ul>
+                </div>
             </div>
             <button class="toggle-button" onclick="toggleActionMenu()">≡</button>
         </div>
