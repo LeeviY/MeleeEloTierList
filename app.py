@@ -275,27 +275,25 @@ def update_matchups(P1, P2, weighted: bool = True):
     # Matchup chart is stored from the perspective of P1.
     global matchup_chart
 
-    winrate = "nan"
-    if not weighted:
-        winrate1 = games_df[
-            (games_df["p1_character"] == P1["character"])
-            & (games_df["p2_character"] == P2["character"])
-            & (games_df["p1_code"] == settings.PLAYER_CODES["P1"])
-            & (games_df["end_type"] != 7)
-        ]["p1_won"].mean()
+    subset = games_df[
+        (games_df["p1_character"] == P1["character"])
+        & (games_df["p2_character"] == P2["character"])
+        & (games_df["p1_code"] == settings.PLAYER_CODES["P1"])
+        & (games_df["end_type"] != 7)
+    ]
 
+    winrate = "nan"
+    matches = len(subset)
+
+    if not weighted:
+        winrate1 = subset["p1_won"].mean()
         if not np.isnan(winrate1):
             winrate = winrate1
     else:
         # weight_func = lambda x: 1.1 ** (1 - x)
         weight_func = lambda x: np.e ** (-0.1 * (x - 1))
-
-        subset = games_df[
-            (games_df["p1_character"] == P1["character"])
-            & (games_df["p2_character"] == P2["character"])
-            & (games_df["p1_code"] == settings.PLAYER_CODES["P1"])
-            & (games_df["end_type"] != 7)
-        ]
+        subset = subset[-100:]
+        matches = len(subset)
 
         if not subset.empty:
             weights = np.array([weight_func(i) for i in reversed(range(len(subset)))])
@@ -304,10 +302,9 @@ def update_matchups(P1, P2, weighted: bool = True):
             if not np.isnan(winrate1):
                 winrate = winrate1
 
-    old_matches = matchup_chart[P1["character"]][P2["character"]]["matches"]
     matchup_chart[P1["character"]][P2["character"]] = {
         "win_rate": winrate,
-        "matches": old_matches + 1,
+        "matches": matches,
     }
 
 

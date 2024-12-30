@@ -15,14 +15,35 @@
             <a href="#">Tier List (stocks)</a>
             <a href="matchup_chart">Matchup Chart</a>
         </div>
-        <h1>Character Matchup Chart</h1>
-        <div class="winner-text"></div>
+        <!-- <h1>Character Matchup Chart</h1> -->
+
         <div class="container">
-            <table id="p1-matchup-chart">
-                <tbody class="matchup-chart-body"></tbody>
-            </table>
+            <div class="matchup-chart-container">
+                <h2>Matchups Chart</h2>
+                <div id="matchup-chart" class="matchup-chart"></div>
+                <div class="slider-container">
+                    <div class="slider-wrapper">
+                        <label for="match-threshold-slider">Match Threshold:</label>
+                        <input
+                            id="match-threshold-slider"
+                            type="range"
+                            min="0"
+                            max="100"
+                            value="5"
+                            oninput="handleSliderChange(this.value)"
+                        />
+                        <span id="match-threshold-slider-value">5</span>
+                    </div>
+                </div>
+            </div>
+
             <div id="random-matchup-container" class="matchup-container">
                 <h2>Random Matchups</h2>
+                <div id="random-matchup-player-id-container" class="matchup-player-id-container">
+                    <div class="matchup-player-id">P1</div>
+                    <div class="matchup-player-id-spacer"></div>
+                    <div class="matchup-player-id">P2</div>
+                </div>
                 <div class="matchup-items"></div>
                 <template id="matchup-pair">
                     <div class="matchup-pair-container">
@@ -34,6 +55,11 @@
             </div>
             <div id="closest-matchup-container" class="matchup-container">
                 <h2>Closest Matchups</h2>
+                <div class="matchup-player-id-container">
+                    <div class="matchup-player-id">P1</div>
+                    <div class="matchup-player-id-spacer"></div>
+                    <div class="matchup-player-id">P2</div>
+                </div>
                 <div class="matchup-items"></div>
                 <template id="matchup-pair">
                     <div class="matchup-pair-container">
@@ -43,14 +69,14 @@
                     </div>
                 </template>
             </div>
-            <!-- <table id="p2-matchup-chart">
-                <tbody class="matchup-chart-body"></tbody>
-            </table> -->
         </div>
         <div class="action-buttons collapsed">
             <div class="menu-content">
                 <!-- <button onclick="incrementMatchupPairRenderFunction()">Switch</button> -->
                 <div class="dropdown">
+                    <button id="toggle-filter-button" class="toggled" onclick="toggleFilter()">
+                        Disable Filter
+                    </button>
                     <button class="dropdown-toggle" onclick="toggleDropdown()">Characters</button>
                     <ul id="dropdown-menu" class="dropdown-menu"></ul>
                 </div>

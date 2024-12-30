@@ -27,33 +27,44 @@ const CHARACTERS = [
     "GANONDORF",
 ];
 
+document.addEventListener("DOMContentLoaded", () => {
+    document.getElementById("match-threshold-slider-value").textContent = matchThreshold;
+    document.getElementById("match-threshold-slider").setAttribute("value", matchThreshold);
+});
+
 let characterMask;
-if (!localStorage.getItem("characterMask")) {
-    characterMask = new Array(26).fill(true);
+// let renderTypeIndex = 0;
+let matchThreshold = 5;
+
+loadLocalStorage();
+
+function loadLocalStorage() {
+    characterMask = JSON.parse(localStorage.getItem("characterMask")) || new Array(26).fill(true);
     localStorage.setItem("characterMask", JSON.stringify(characterMask));
-} else {
-    characterMask = JSON.parse(localStorage.getItem("characterMask"));
+
+    matchThreshold = JSON.parse(localStorage.getItem("matchThreshold")) || 5;
+    localStorage.setItem("matchThreshold", JSON.stringify(matchThreshold));
 }
 
-let renderTypeIndex = 0;
-
-let matchupData = null;
+let matchupData;
+let characterCount = 0;
 
 const socket = io.connect("http://127.0.0.1:5000");
-socket.on("matchup_update", function (data) {
+socket.on("matchup_update", (data) => {
     console.log(data);
     matchupData = data;
     populateDropdown();
     reRender(data);
 });
 
-function reRender(data) {
+function reRender(data, reRenderMatchupPairs = true) {
     const { matchups, winner } = data;
 
     const namedMatchups = mapCharacterNames(matchups);
 
-    const maskIndices = characterMask.map((x, i) => (!x ? i : -1)).filter((i) => i != -1);
+    const maskIndices = characterMask.flatMap((x, i) => (x ? [] : i));
     const filteredMatchups = remove(namedMatchups, maskIndices, maskIndices);
+    characterCount = filteredMatchups.length;
 
     console.log(filteredMatchups);
 
@@ -64,8 +75,8 @@ function reRender(data) {
 
     const sortedMatchups = reorder(filteredMatchups, rowOrder, colOrder);
 
-    renderMatchupChart(sortedMatchups, "p1-matchup-chart");
-    chooseMatchupPairRender(filteredMatchups, winner);
+    renderMatchupChart(sortedMatchups);
+    if (reRenderMatchupPairs) renderMatchups(filteredMatchups, winner);
 }
 
 function calculateSortedIndices(matchups) {
@@ -131,9 +142,14 @@ function flipDiagonally(matrix) {
     return matrix;
 }
 
-function chooseMatchupPairRender(matchups, winner) {
+function renderMatchups(matchups, winner) {
     const p1Won = winner === "P1";
-    document.querySelector(".winner-text").innerText = `${p1Won ? "P2" : "P1"} Chooses`;
+    // p1Won = false;
+    const container = document.getElementById("random-matchup-player-id-container");
+    const textElements = container.querySelectorAll(".matchup-player-id");
+    textElements[0].textContent = p1Won ? "P2" : "P1";
+    textElements[1].textContent = !p1Won ? "P2" : "P1";
+
     renderClosestMatchups(matchups);
     renderRandomMatchups(!p1Won ? matchups : flipMatchupChart(matchups));
 }
@@ -163,11 +179,22 @@ function renderClosestMatchups(matchups) {
 }
 
 function renderRandomMatchups(matchups) {
-    const matchupPairs = matchups.map((row, i) => {
-        const weights = row.map((col) => {
-            return col.data.matches < 5 ? 1 : 1 - (Math.abs(col.data.win_rate - 0.5) * 2) ** 4;
-        });
+    const calcWeight = (winRate, matches) => {
+        if (matches < 5) return 1;
+        return 0.5 - Math.abs(winRate - 0.5) + 0.5 / matches;
+    };
+
+    const matchupPairs = matchups.map((row) => {
+        const weights = row.map((col) => calcWeight(col.data.win_rate, col.data.matches));
         const weightsSum = weights.reduce((sum, w) => sum + w, 0);
+        // console.log(`${row[0].with}:`);
+        // weights.forEach((x, i) => {
+        //     console.log(
+        //         "\t",
+        //         row[i].against.slice(0, 3),
+        //         Math.round((x / weightsSum) * 1000) / 1000
+        //     );
+        // });
         const random = Math.random();
         const opponent = weights
             .reduce((acc, weight) => {
@@ -202,51 +229,93 @@ function renderMatchupPairs(pairs, id) {
     });
 }
 
-function renderMatchupChart(matchups, id) {
-    const table = document.getElementById(id);
-    const body = table.querySelector(".matchup-chart-body");
-    body.innerHTML = "";
+function renderMatchupChart(matchups) {
+    const chart = document.getElementById("matchup-chart");
+    chart.innerHTML = "";
 
-    const headerRow = document.createElement("tr");
-    const td = document.createElement("td");
-    headerRow.appendChild(td);
+    console.log(chart.clientWidth);
+
+    // Create header row
+    const headerRow = document.createElement("div");
+    headerRow.classList.add("row");
+
+    const emptyCell = document.createElement("div");
+    emptyCell.classList.add("cell");
+    headerRow.appendChild(emptyCell);
 
     matchups[0].forEach((col) => {
-        const td = document.createElement("td");
+        const cell = document.createElement("div");
+        cell.classList.add("cell");
+
         const img = document.createElement("img");
         img.src = `/static/images/${col.against}.png`;
-        td.appendChild(img);
-        headerRow.appendChild(td);
+        cell.appendChild(img);
+
+        headerRow.appendChild(cell);
     });
 
-    body.appendChild(headerRow);
+    chart.appendChild(headerRow);
 
+    // Create body rows
     matchups.forEach((row) => {
-        const tableRow = document.createElement("tr");
-        const td = document.createElement("td");
+        const rowDiv = document.createElement("div");
+        rowDiv.classList.add("row");
+
+        const firstCell = document.createElement("div");
+        firstCell.classList.add("cell");
+
         const img = document.createElement("img");
         img.src = `/static/images/${row[0].with}.png`;
-        td.appendChild(img);
-        tableRow.appendChild(td);
+        firstCell.appendChild(img);
+        rowDiv.appendChild(firstCell);
 
         row.forEach((x) => {
-            const td = document.createElement("td");
-            const winRate = x.data.win_rate;
-            td.innerText = Math.round(winRate * 100) / 100;
-            const color = isNaN(winRate) ? "#000000" : hsv2rgb(Math.floor(winRate * 120), 0.6, 1);
-            td.style.backgroundColor = color;
+            const cell = document.createElement("div");
+            cell.classList.add("cell");
 
-            const h5 = document.createElement("h5");
-            h5.innerText = `(${x.data.matches})`;
-            h5.classList.add("match-number");
-            td.appendChild(h5);
+            const { win_rate, matches } = x.data;
 
-            tableRow.appendChild(td);
+            const winRateText = document.createElement("div");
+            winRateText.innerText = Math.round(win_rate * 100) / 100;
+            winRateText.classList.add("win-number");
+            cell.appendChild(winRateText);
+
+            const matchesText = document.createElement("div");
+            matchesText.innerText = `(${matches})`;
+            matchesText.classList.add("match-number");
+            cell.appendChild(matchesText);
+
+            cell.style.backgroundColor = isNaN(win_rate)
+                ? "#000000"
+                : hsv2rgb(
+                      Math.floor(win_rate * 120),
+                      matches < matchThreshold ? 0.4 : 0.6,
+                      matches < matchThreshold ? 0.3 : 1
+                  );
+
+            rowDiv.appendChild(cell);
         });
 
-        table.querySelector(".matchup-chart-body").appendChild(tableRow);
+        chart.appendChild(rowDiv);
     });
+
+    updateFontSize();
 }
+
+function updateFontSize() {
+    const chart = document.getElementById("matchup-chart");
+    if (!chart) return;
+
+    const winRateTextSize = chart.clientWidth / 3 / characterCount;
+    const winRateTexts = chart.querySelectorAll(".win-number");
+    winRateTexts.forEach((winRateText) => (winRateText.style.fontSize = winRateTextSize + "px"));
+
+    const matchesTextSize = chart.clientWidth / 4 / characterCount;
+    const matchesTexts = chart.querySelectorAll(".match-number");
+    matchesTexts.forEach((matchesText) => (matchesText.style.fontSize = matchesTextSize + "px"));
+}
+
+window.addEventListener("resize", updateFontSize);
 
 const hsv2rgb = (h, s, v) => {
     if (s === 0) {
@@ -320,8 +389,28 @@ function toggleDropdown() {
 function toggleItem(index, element) {
     console.log(`Toggled item ${index}: ${CHARACTERS[index]}`);
     element.classList.toggle("toggled");
+    characterMask = JSON.parse(localStorage.getItem("characterMask"));
     characterMask[index] = element.classList.contains("toggled");
-    console.log(characterMask);
     localStorage.setItem("characterMask", JSON.stringify(characterMask));
     if (matchupData) reRender(matchupData);
+}
+
+function toggleFilter() {
+    const button = document.getElementById("toggle-filter-button");
+    button.classList.toggle("toggled");
+    if (!button.classList.contains("toggled")) {
+        characterMask = new Array(26).fill(true);
+        button.innerText = "Enable Filter";
+    } else {
+        characterMask = JSON.parse(localStorage.getItem("characterMask"));
+        button.innerText = "Disable Filter";
+    }
+    reRender(matchupData);
+}
+
+function handleSliderChange(value) {
+    matchThreshold = value;
+    localStorage.setItem("matchThreshold", JSON.stringify(matchThreshold));
+    document.getElementById("match-threshold-slider-value").textContent = value;
+    reRender(matchupData, false);
 }
