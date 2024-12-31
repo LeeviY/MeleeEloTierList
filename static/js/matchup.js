@@ -28,45 +28,65 @@ const CHARACTERS = [
 ];
 
 document.addEventListener("DOMContentLoaded", () => {
-    document.getElementById("match-threshold-slider-value").textContent = matchThreshold;
-    document.getElementById("match-threshold-slider").setAttribute("value", matchThreshold);
+    handleSliderChange(_matchThreshold);
+    document.getElementById("match-threshold-slider").setAttribute("value", _matchThreshold);
+
+    if (_showTrendline) {
+        toggleTrendline();
+    }
+
+    if (_filterEnabled) {
+        toggleFilter();
+    }
 });
 
-let characterMask;
-// let renderTypeIndex = 0;
-let matchThreshold = 5;
+window.addEventListener("resize", updateFontSize);
+
+let _characterMask = new Array(26).fill(true);
+let _matchThreshold;
+let _showTrendline;
+let _filterEnabled;
 
 loadLocalStorage();
 
 function loadLocalStorage() {
-    characterMask = JSON.parse(localStorage.getItem("characterMask")) || new Array(26).fill(true);
-    localStorage.setItem("characterMask", JSON.stringify(characterMask));
+    // _characterMask = JSON.parse(localStorage.getItem("characterMask")) || new Array(26).fill(true);
+    // localStorage.setItem("characterMask", JSON.stringify(_characterMask));
 
-    matchThreshold = JSON.parse(localStorage.getItem("matchThreshold")) || 5;
-    localStorage.setItem("matchThreshold", JSON.stringify(matchThreshold));
+    _matchThreshold = JSON.parse(localStorage.getItem("matchThreshold")) || 5;
+    localStorage.setItem("matchThreshold", JSON.stringify(_matchThreshold));
+
+    _filterEnabled = JSON.parse(localStorage.getItem("filterEnabled")) || false;
+    localStorage.setItem("filterEnabled", JSON.stringify(_filterEnabled));
+
+    _showTrendline = JSON.parse(localStorage.getItem("showTrendline")) || false;
+    localStorage.setItem("showTrendline", JSON.stringify(_showTrendline));
 }
 
-let matchupData;
-let characterCount = 0;
+let _matchupData;
+let _characterCount = 0;
 
 const socket = io.connect("http://127.0.0.1:5000");
 socket.on("matchup_update", (data) => {
     console.log(data);
-    matchupData = data;
+    _matchupData = data;
     populateDropdown();
     reRender(data);
 });
 
-function reRender(data, reRenderMatchupPairs = true) {
+let _k = 0;
+let _d = 0;
+
+function reRender(data, renderMatchupPairs = true) {
+    console.log("reRender");
+    if (!data) return;
     const { matchups, winner } = data;
 
     const namedMatchups = mapCharacterNames(matchups);
 
-    const maskIndices = characterMask.flatMap((x, i) => (x ? [] : i));
+    const maskIndices = _characterMask.flatMap((x, i) => (x ? [] : i));
     const filteredMatchups = remove(namedMatchups, maskIndices, maskIndices);
-    characterCount = filteredMatchups.length;
-
-    console.log(filteredMatchups);
+    _characterCount = filteredMatchups.length;
 
     const rowOrder = calculateSortedIndices(filteredMatchups);
     const colOrder = calculateSortedIndices(
@@ -76,23 +96,82 @@ function reRender(data, reRenderMatchupPairs = true) {
     const sortedMatchups = reorder(filteredMatchups, rowOrder, colOrder);
 
     renderMatchupChart(sortedMatchups);
-    if (reRenderMatchupPairs) renderMatchups(filteredMatchups, winner);
+
+    if (renderMatchupPairs) {
+        renderMatchups(filteredMatchups, winner);
+    }
+
+    if (_showTrendline) {
+        const [min, k, d] = searchMinDifference(sortedMatchups);
+        console.log("min:", min, "k:", k, "d:", d);
+        _k = k;
+        _d = d;
+        drawTrendline(_k, _d);
+    }
+}
+
+function calculateSplitDifference(weights, k, d) {
+    let over = 0;
+    let under = 0;
+    for (let y = 0; y < weights.length; y++) {
+        for (let x = 0; x < weights.length; x++) {
+            const px = x / (_characterCount - 1);
+            const py = y / (_characterCount - 1);
+            const ly = px * k + d;
+            if (Math.abs(py - ly) < 1e-9) {
+                continue;
+            } else if (py > ly) {
+                over += weights[weights.length - 1 - y][x];
+            } else {
+                under += weights[weights.length - 1 - y][x];
+            }
+        }
+    }
+
+    return Math.abs(over - under);
+}
+
+function searchMinDifference(matchups) {
+    let minDifference = Infinity,
+        minK = 0,
+        minD = 0;
+
+    const weights = matchups.map((row) =>
+        row.map((x) =>
+            isNaN(x.data.win_rate) || x.data.matches < _matchThreshold
+                ? 0
+                : Math.abs(x.data.win_rate - 0.5)
+        )
+    );
+
+    for (let k = -30; k <= 0; k += 0.1) {
+        for (let d = 0; d <= -k + 1; d += 0.2) {
+            const difference = calculateSplitDifference(weights, k, d);
+            if (difference < minDifference) {
+                minDifference = difference;
+                minK = k;
+                minD = d;
+            }
+        }
+    }
+
+    return [minDifference, minK, minD];
 }
 
 function calculateSortedIndices(matchups) {
     return matchups
         .map((row, i) => {
             const { wins, matches } = row.reduce(
-                (acc, x) =>
-                    !isNaN(x.data.win_rate)
-                        ? {
-                              wins: acc.wins + x.data.win_rate * x.data.matches,
-                              matches: acc.matches + x.data.matches,
-                          }
-                        : acc,
+                (acc, x) => {
+                    if (!isNaN(x.data.win_rate)) {
+                        acc.wins += x.data.win_rate * x.data.matches;
+                        acc.matches += x.data.matches;
+                    }
+                    return acc;
+                },
                 { wins: 0, matches: 0 }
             );
-            return [i, wins / matches];
+            return [i, wins / Math.sqrt(matches)];
         })
         .sort((a, b) => b[1] - a[1])
         .map((x) => x[0]);
@@ -229,13 +308,24 @@ function renderMatchupPairs(pairs, id) {
     });
 }
 
+function checkLine(k, d, x, y) {
+    const px = x / (_characterCount - 1);
+    const py = y / (_characterCount - 1);
+    const ly = px * k + d;
+    console.log(py - ly);
+    if (Math.abs(py - ly) < 1e-9) {
+        return 0;
+    } else if (py > ly) {
+        return 1;
+    } else {
+        return -1;
+    }
+}
+
 function renderMatchupChart(matchups) {
     const chart = document.getElementById("matchup-chart");
     chart.innerHTML = "";
 
-    console.log(chart.clientWidth);
-
-    // Create header row
     const headerRow = document.createElement("div");
     headerRow.classList.add("row");
 
@@ -256,8 +346,7 @@ function renderMatchupChart(matchups) {
 
     chart.appendChild(headerRow);
 
-    // Create body rows
-    matchups.forEach((row) => {
+    matchups.forEach((row, y) => {
         const rowDiv = document.createElement("div");
         rowDiv.classList.add("row");
 
@@ -269,11 +358,11 @@ function renderMatchupChart(matchups) {
         firstCell.appendChild(img);
         rowDiv.appendChild(firstCell);
 
-        row.forEach((x) => {
+        row.forEach((col, x) => {
             const cell = document.createElement("div");
             cell.classList.add("cell");
 
-            const { win_rate, matches } = x.data;
+            const { win_rate, matches } = col.data;
 
             const winRateText = document.createElement("div");
             winRateText.innerText = Math.round(win_rate * 100) / 100;
@@ -285,12 +374,18 @@ function renderMatchupChart(matchups) {
             matchesText.classList.add("match-number");
             cell.appendChild(matchesText);
 
+            // cell.style.backgroundColor = hsv2rgb(
+            //     Math.floor(((checkLine(_k, _d, x, matchups.length - 1 - y) + 1) / 2) * 120),
+            //     1,
+            //     1
+            // );
+
             cell.style.backgroundColor = isNaN(win_rate)
                 ? "#000000"
                 : hsv2rgb(
                       Math.floor(win_rate * 120),
-                      matches < matchThreshold ? 0.4 : 0.6,
-                      matches < matchThreshold ? 0.3 : 1
+                      matches < _matchThreshold ? 0.4 : 0.6,
+                      matches < _matchThreshold ? 0.3 : 1
                   );
 
             rowDiv.appendChild(cell);
@@ -300,22 +395,48 @@ function renderMatchupChart(matchups) {
     });
 
     updateFontSize();
+    updateCanvasSize(chart);
+}
+
+function updateCanvasSize(chart) {
+    const canvas = document.getElementById("grid-canvas");
+    const cellSize = chart.clientWidth / (_characterCount + 1);
+    canvas.width = chart.clientWidth - cellSize;
+    canvas.height = chart.clientWidth - cellSize;
+    canvas.style.top = cellSize + "px";
+    canvas.style.left = cellSize + "px";
+}
+
+function drawTrendline(k, d) {
+    const canvas = document.getElementById("grid-canvas");
+
+    const size = canvas.width;
+
+    const pCoord = [Math.max((1 - d) / k, 0) * size, size - Math.min(d, 1) * size];
+    const qCoord = [Math.max(-d / k, 0) * size, size];
+
+    const ctx = canvas.getContext("2d");
+
+    ctx.beginPath();
+    ctx.moveTo(...pCoord);
+    ctx.lineTo(...qCoord);
+    ctx.strokeStyle = "#4ea9ffaa";
+    ctx.lineWidth = 2;
+    ctx.stroke();
 }
 
 function updateFontSize() {
     const chart = document.getElementById("matchup-chart");
     if (!chart) return;
 
-    const winRateTextSize = chart.clientWidth / 3 / characterCount;
+    const winRateTextSize = chart.clientWidth / 3 / _characterCount;
     const winRateTexts = chart.querySelectorAll(".win-number");
     winRateTexts.forEach((winRateText) => (winRateText.style.fontSize = winRateTextSize + "px"));
 
-    const matchesTextSize = chart.clientWidth / 4 / characterCount;
+    const matchesTextSize = chart.clientWidth / 4 / _characterCount;
     const matchesTexts = chart.querySelectorAll(".match-number");
     matchesTexts.forEach((matchesText) => (matchesText.style.fontSize = matchesTextSize + "px"));
 }
-
-window.addEventListener("resize", updateFontSize);
 
 const hsv2rgb = (h, s, v) => {
     if (s === 0) {
@@ -387,30 +508,45 @@ function toggleDropdown() {
 }
 
 function toggleItem(index, element) {
-    console.log(`Toggled item ${index}: ${CHARACTERS[index]}`);
     element.classList.toggle("toggled");
-    characterMask = JSON.parse(localStorage.getItem("characterMask"));
-    characterMask[index] = element.classList.contains("toggled");
-    localStorage.setItem("characterMask", JSON.stringify(characterMask));
-    if (matchupData) reRender(matchupData);
+    _characterMask = JSON.parse(localStorage.getItem("characterMask"));
+    _characterMask[index] = element.classList.contains("toggled");
+    localStorage.setItem("characterMask", JSON.stringify(_characterMask));
+    if (_matchupData) reRender(_matchupData);
 }
 
 function toggleFilter() {
     const button = document.getElementById("toggle-filter-button");
     button.classList.toggle("toggled");
-    if (!button.classList.contains("toggled")) {
-        characterMask = new Array(26).fill(true);
-        button.innerText = "Enable Filter";
-    } else {
-        characterMask = JSON.parse(localStorage.getItem("characterMask"));
+
+    _filterEnabled = button.classList.contains("toggled");
+    localStorage.setItem("filterEnabled", JSON.stringify(_filterEnabled));
+
+    if (_filterEnabled) {
+        _characterMask = JSON.parse(localStorage.getItem("characterMask"));
         button.innerText = "Disable Filter";
+    } else {
+        _characterMask = new Array(26).fill(true);
+        button.innerText = "Enable Filter";
     }
-    reRender(matchupData);
+    reRender(_matchupData);
+}
+
+function toggleTrendline() {
+    const button = document.getElementById("toggle-line-button");
+    button.classList.toggle("toggled");
+
+    _showTrendline = button.classList.contains("toggled");
+    localStorage.setItem("showTrendline", JSON.stringify(_showTrendline));
+
+    button.innerText = _showTrendline ? "Hide Trendline" : "Show Trendline";
+
+    reRender(_matchupData, false);
 }
 
 function handleSliderChange(value) {
-    matchThreshold = value;
-    localStorage.setItem("matchThreshold", JSON.stringify(matchThreshold));
+    _matchThreshold = value;
+    localStorage.setItem("matchThreshold", JSON.stringify(_matchThreshold));
     document.getElementById("match-threshold-slider-value").textContent = value;
-    reRender(matchupData, false);
+    reRender(_matchupData, false);
 }

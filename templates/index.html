@@ -7,6 +7,7 @@
         <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
         <script src="static/js/tierlist.js"></script>
         <script src="static/js/reset.js"></script>
+        <link rel="stylesheet" href="static/css/styles.css" />
         <link rel="stylesheet" href="static/css/tierlist-styles.css" />
     </head>
 
@@ -68,7 +69,9 @@
         </div>
         <div class="action-buttons collapsed">
             <div class="menu-content">
-                <button id="allow-exit-button" onclick="toggleAllowExit()">Allow Quitting: false</button>
+                <button id="allow-exit-button" onclick="toggleAllowExit()">
+                    Allow Quitting: false
+                </button>
                 <button onclick="resetTierList()">Reset Tier List</button>
                 <button onclick="recalculateTierList()">Recalculate Tier List</button>
                 <div class="date-range-selection">

@@ -6,7 +6,7 @@
         <title>Character Matchup Chart</title>
         <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
         <script src="static/js/matchup.js"></script>
-        <link rel="stylesheet" href="static/css/tierlist-styles.css" />
+        <link rel="stylesheet" href="static/css/styles.css" />
         <link rel="stylesheet" href="static/css/matchup-styles.css" />
     </head>
     <body>
@@ -20,14 +20,18 @@
         <div class="container">
             <div class="matchup-chart-container">
                 <h2>Matchups Chart</h2>
-                <div id="matchup-chart" class="matchup-chart"></div>
+                <div class="matchup-grid-container">
+                    <div id="matchup-chart" class="matchup-chart"></div>
+                    <canvas id="grid-canvas"></canvas>
+                </div>
+
                 <div class="slider-container">
                     <div class="slider-wrapper">
                         <label for="match-threshold-slider">Match Threshold:</label>
                         <input
                             id="match-threshold-slider"
                             type="range"
-                            min="0"
+                            min="1"
                             max="100"
                             value="5"
                             oninput="handleSliderChange(this.value)"
@@ -72,11 +76,9 @@
         </div>
         <div class="action-buttons collapsed">
             <div class="menu-content">
-                <!-- <button onclick="incrementMatchupPairRenderFunction()">Switch</button> -->
+                <button id="toggle-filter-button" onclick="toggleFilter()">Enable Filter</button>
+                <button id="toggle-line-button" onclick="toggleTrendline()">Show Trendline</button>
                 <div class="dropdown">
-                    <button id="toggle-filter-button" class="toggled" onclick="toggleFilter()">
-                        Disable Filter
-                    </button>
                     <button class="dropdown-toggle" onclick="toggleDropdown()">Characters</button>
                     <ul id="dropdown-menu" class="dropdown-menu"></ul>
                 </div>
