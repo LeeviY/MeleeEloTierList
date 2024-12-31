@@ -98,7 +98,10 @@ function reRender(data, renderMatchupPairs = true) {
     const sortedMatchups = reorder(filteredMatchups, rowOrder, colOrder);
 
     if (_showTrendline) {
+        const start = performance.now();
         const [min, k, d] = searchMinDifference(sortedMatchups);
+        const end = performance.now();
+        console.log(`searchMinDifference took ${end - start} milliseconds.`);
         console.log("min:", min, "k:", k, "d:", d);
         _k = k;
         _d = d;
@@ -122,18 +125,18 @@ function reRender(data, renderMatchupPairs = true) {
 function calculateSplitDifference(weights, k, d) {
     let over = 0;
     let under = 0;
-    for (let y = 0; y < weights.length; y++) {
-        for (let x = 0; x < weights.length; x++) {
-            const px = x / (_characterCount - 1);
-            const py = y / (_characterCount - 1);
-            const ly = px * k + d;
-            if (Math.abs(py - ly) < 1e-9) {
-                continue;
-            } else if (py > ly) {
-                over += weights[weights.length - 1 - y][x];
-            } else {
-                under += weights[weights.length - 1 - y][x];
-            }
+    for (var i = 0; i < weights.length; i++) {
+        const weight = weights[i];
+        const x = weight[0];
+        const y = weight[1];
+        const val = weight[2];
+        const ly = x * k + d;
+        if (Math.abs(y - ly) < 1e-9) {
+            continue;
+        } else if (y > ly) {
+            over += val;
+        } else {
+            under += val;
         }
     }
 
@@ -145,16 +148,22 @@ function searchMinDifference(matchups) {
         minK = 0,
         minD = 0;
 
-    const weights = matchups.map((row) =>
-        row.map((x) =>
-            isNaN(x.data.win_rate) || x.data.matches < _matchThreshold
-                ? 0
-                : Math.abs(x.data.win_rate - 0.5) * Math.sqrt(x.data.matches)
-        )
+    const weights = matchups.flatMap((row, y) =>
+        row
+            .map((col, x) => {
+                return [
+                    x / (_characterCount - 1),
+                    (matchups.length - 1 - y) / (_characterCount - 1),
+                    isNaN(col.data.win_rate) || col.data.matches < _matchThreshold
+                        ? 0
+                        : Math.abs(col.data.win_rate - 0.5) * Math.sqrt(col.data.matches),
+                ];
+            })
+            .filter((x) => x[2] > 0)
     );
 
     for (let k = -30; k <= 0; k += 0.1) {
-        for (let d = 0; d <= -k + 1; d += 0.2) {
+        for (let d = 0; d <= -k + 1; d += 0.05) {
             const difference = calculateSplitDifference(weights, k, d);
             if (difference < minDifference) {
                 minDifference = difference;
