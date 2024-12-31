@@ -77,6 +77,8 @@ socket.on("matchup_update", (data) => {
 let _k = 0;
 let _d = 0;
 
+let _visualizeLine = false;
+
 function reRender(data, renderMatchupPairs = true) {
     console.log("reRender");
     if (!data) return;
@@ -95,6 +97,13 @@ function reRender(data, renderMatchupPairs = true) {
 
     const sortedMatchups = reorder(filteredMatchups, rowOrder, colOrder);
 
+    if (_showTrendline) {
+        const [min, k, d] = searchMinDifference(sortedMatchups);
+        console.log("min:", min, "k:", k, "d:", d);
+        _k = k;
+        _d = d;
+    }
+
     renderMatchupChart(sortedMatchups);
 
     if (renderMatchupPairs) {
@@ -102,10 +111,10 @@ function reRender(data, renderMatchupPairs = true) {
     }
 
     if (_showTrendline) {
-        const [min, k, d] = searchMinDifference(sortedMatchups);
-        console.log("min:", min, "k:", k, "d:", d);
-        _k = k;
-        _d = d;
+        // const [min, k, d] = searchMinDifference(sortedMatchups);
+        // console.log("min:", min, "k:", k, "d:", d);
+        // _k = k;
+        // _d = d;
         drawTrendline(_k, _d);
     }
 }
@@ -140,7 +149,7 @@ function searchMinDifference(matchups) {
         row.map((x) =>
             isNaN(x.data.win_rate) || x.data.matches < _matchThreshold
                 ? 0
-                : Math.abs(x.data.win_rate - 0.5)
+                : Math.abs(x.data.win_rate - 0.5) * Math.sqrt(x.data.matches)
         )
     );
 
@@ -374,19 +383,26 @@ function renderMatchupChart(matchups) {
             matchesText.classList.add("match-number");
             cell.appendChild(matchesText);
 
-            // cell.style.backgroundColor = hsv2rgb(
-            //     Math.floor(((checkLine(_k, _d, x, matchups.length - 1 - y) + 1) / 2) * 120),
-            //     1,
-            //     1
-            // );
-
-            cell.style.backgroundColor = isNaN(win_rate)
-                ? "#000000"
-                : hsv2rgb(
-                      Math.floor(win_rate * 120),
-                      matches < _matchThreshold ? 0.4 : 0.6,
-                      matches < _matchThreshold ? 0.3 : 1
-                  );
+            if (_visualizeLine) {
+                cell.style.backgroundColor =
+                    isNaN(win_rate) || matches < _matchThreshold
+                        ? "#000000"
+                        : hsv2rgb(
+                              Math.floor(
+                                  ((checkLine(_k, _d, x, matchups.length - 1 - y) + 1) / 2) * 120
+                              ),
+                              1,
+                              1
+                          );
+            } else {
+                cell.style.backgroundColor = isNaN(win_rate)
+                    ? "#000000"
+                    : hsv2rgb(
+                          Math.floor(win_rate * 120),
+                          matches < _matchThreshold ? 0.4 : 0.6,
+                          matches < _matchThreshold ? 0.3 : 1
+                      );
+            }
 
             rowDiv.appendChild(cell);
         });
