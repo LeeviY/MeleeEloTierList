@@ -354,10 +354,7 @@ function renderMatchupChart(matchups) {
     matchups[0].forEach((col) => {
         const cell = document.createElement("div");
         cell.classList.add("cell");
-
-        const img = document.createElement("img");
-        img.src = `/static/images/${col.against}.png`;
-        cell.appendChild(img);
+        cell.style.background = `url(/static/images/${col.against}.png) center/cover no-repeat`;
 
         headerRow.appendChild(cell);
     });
@@ -370,10 +367,8 @@ function renderMatchupChart(matchups) {
 
         const firstCell = document.createElement("div");
         firstCell.classList.add("cell");
+        firstCell.style.background = `url(/static/images/${row[0].with}.png) center/cover no-repeat`;
 
-        const img = document.createElement("img");
-        img.src = `/static/images/${row[0].with}.png`;
-        firstCell.appendChild(img);
         rowDiv.appendChild(firstCell);
 
         row.forEach((col, x) => {
