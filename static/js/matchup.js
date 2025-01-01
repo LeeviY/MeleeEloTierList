@@ -31,28 +31,22 @@ document.addEventListener("DOMContentLoaded", () => {
     handleSliderChange(_matchThreshold);
     document.getElementById("match-threshold-slider").setAttribute("value", _matchThreshold);
 
-    if (_showTrendline) {
-        toggleTrendline();
-    }
-
-    if (_filterEnabled) {
-        toggleFilter();
-    }
+    document.getElementById("toggle-filter-button").checked = _filterEnabled;
+    document.getElementById("toggle-trendline-button").checked = _showTrendline;
 });
 
 window.addEventListener("resize", updateFontSize);
 
 let _characterMask = new Array(26).fill(true);
-let _matchThreshold;
-let _showTrendline;
-let _filterEnabled;
+let _matchThreshold = 0;
+let _showTrendline = false;
+let _filterEnabled = false;
 
 loadLocalStorage();
 
 function loadLocalStorage() {
-    // _characterMask = JSON.parse(localStorage.getItem("characterMask")) || new Array(26).fill(true);
-    // localStorage.setItem("characterMask", JSON.stringify(_characterMask));
-
+    _characterMask = JSON.parse(localStorage.getItem("characterMask")) || new Array(26).fill(true);
+    localStorage.setItem("characterMask", JSON.stringify(_characterMask));
     _matchThreshold = JSON.parse(localStorage.getItem("matchThreshold")) || 5;
     localStorage.setItem("matchThreshold", JSON.stringify(_matchThreshold));
 
@@ -87,7 +81,9 @@ function reRender(data, renderMatchupPairs = true) {
     const namedMatchups = mapCharacterNames(matchups);
 
     const maskIndices = _characterMask.flatMap((x, i) => (x ? [] : i));
-    const filteredMatchups = remove(namedMatchups, maskIndices, maskIndices);
+    const filteredMatchups = _filterEnabled
+        ? remove(namedMatchups, maskIndices, maskIndices)
+        : namedMatchups;
     _characterCount = filteredMatchups.length;
 
     const rowOrder = calculateSortedIndices(filteredMatchups);
@@ -96,17 +92,6 @@ function reRender(data, renderMatchupPairs = true) {
     );
 
     const sortedMatchups = reorder(filteredMatchups, rowOrder, colOrder);
-
-    if (_showTrendline) {
-        const start = performance.now();
-        const [min, k, d] = searchMinDifference(sortedMatchups);
-        const end = performance.now();
-        console.log(`searchMinDifference took ${end - start} milliseconds.`);
-        console.log("min:", min, "k:", k, "d:", d);
-        _k = k;
-        _d = d;
-    }
-
     renderMatchupChart(sortedMatchups);
 
     if (renderMatchupPairs) {
@@ -114,12 +99,67 @@ function reRender(data, renderMatchupPairs = true) {
     }
 
     if (_showTrendline) {
-        // const [min, k, d] = searchMinDifference(sortedMatchups);
-        // console.log("min:", min, "k:", k, "d:", d);
-        // _k = k;
-        // _d = d;
-        drawTrendline(_k, _d);
+        const [k, d] = pcaBestFitLine(calculateMidPoints(sortedMatchups));
+        console.log("k:", k, "d:", d);
+        drawLine(k, d);
     }
+}
+
+function calculateMidPoints(matchups) {
+    const points = matchups
+        .map((row, y) => {
+            const weightedSum = row.reduce((acc, col, x) => {
+                if (isNaN(col.data.win_rate) || col.data.matches < _matchThreshold) return acc;
+                const weight = Math.abs(col.data.win_rate - 0.5) * (x / (_characterCount - 1));
+                return acc + weight;
+            }, 0);
+
+            const totalWeight = row.reduce((acc, col) => {
+                if (isNaN(col.data.win_rate) || col.data.matches < _matchThreshold) return acc;
+                return acc + Math.abs(col.data.win_rate - 0.5);
+            }, 0);
+
+            const middle = weightedSum / totalWeight;
+            return [middle || -1, (matchups.length - 1 - y) / (_characterCount - 1)];
+        })
+        .filter(([middle]) => middle !== -1);
+
+    return points;
+}
+
+function leastSquaresFit(points) {
+    const [sumX, sumY, sumXY, sumX2] = points.reduce(
+        ([sx, sy, sxy, sx2], [x, y]) => [sx + x, sy + y, sxy + x * y, sx2 + x * x],
+        [0, 0, 0, 0]
+    );
+    const k = (points.length * sumXY - sumX * sumY) / (points.length * sumX2 - sumX ** 2);
+    const d = (sumY - k * sumX) / points.length;
+    return [k, d];
+}
+
+function pcaBestFitLine(points) {
+    const [meanX, meanY] = points
+        .reduce(([sumX, sumY], [x, y]) => [sumX + x, sumY + y], [0, 0])
+        .map((sum) => sum / points.length);
+
+    let [covXX, covXY, covYY] = [0, 0, 0];
+    points.forEach(([x, y]) => {
+        const dx = x - meanX,
+            dy = y - meanY;
+        covXX += dx * dx;
+        covXY += dx * dy;
+        covYY += dy * dy;
+    });
+
+    const trace = covXX + covYY,
+        det = covXX * covYY - covXY ** 2;
+    const eig1 = trace / 2 + Math.sqrt(trace ** 2 / 4 - det);
+    const [vx, vy] = [1, (eig1 - covXX) / covXY];
+
+    const k = vy / vx;
+    const d = meanY - k * meanX;
+
+    return [k, d];
 }
 
 function calculateSplitDifference(weights, k, d) {
@@ -173,25 +213,58 @@ function searchMinDifference(matchups) {
         }
     }
 
-    return [minDifference, minK, minD];
+    return [minK, minD, minDifference];
 }
 
 function calculateSortedIndices(matchups) {
+    // return matchups
+    //     .map((row, i) => {
+    //         const { wins, matches } = row.reduce(
+    //             (acc, x) => {
+    //                 if (!isNaN(x.data.win_rate)) {
+    //                     acc.wins += x.data.win_rate * x.data.matches;
+    //                     acc.matches += x.data.matches;
+    //                 }
+    //                 return acc;
+    //             },
+    //             { wins: 0, matches: 0 }
+    //         );
+    //         return [i, wins / Math.sqrt(matches)];
+    //     })
+    //     .sort((a, b) => b[1] - a[1])
+    //     .map((x) => x[0]);
+    const matchThreshold = 5;
     return matchups
-        .map((row, i) => {
-            const { wins, matches } = row.reduce(
-                (acc, x) => {
-                    if (!isNaN(x.data.win_rate)) {
-                        acc.wins += x.data.win_rate * x.data.matches;
-                        acc.matches += x.data.matches;
-                    }
-                    return acc;
-                },
-                { wins: 0, matches: 0 }
-            );
-            return [i, wins / Math.sqrt(matches)];
+        .map((row, i) => [i, row])
+        .sort((a, b) => {
+            let total = 0;
+            let totalMatchesA = 0;
+            let totalMatchesB = 0;
+            for (let i = 0; i < a[1].length; i++) {
+                const { win_rate: winA, matches: matchesA } = a[1][i].data;
+                const { win_rate: winB, matches: matchesB } = b[1][i].data;
+
+                totalMatchesA += matchesA;
+                totalMatchesB += matchesB;
+
+                if (
+                    matchesA < matchThreshold ||
+                    matchesB < matchThreshold ||
+                    isNaN(winA) ||
+                    isNaN(winB)
+                ) {
+                    continue;
+                }
+
+                if (winB > winA) {
+                    total++;
+                } else if (winB < winA) {
+                    total--;
+                }
+            }
+
+            return total != 0 ? total : totalMatchesB - totalMatchesA;
         })
-        .sort((a, b) => b[1] - a[1])
         .map((x) => x[0]);
 }
 
@@ -383,30 +456,30 @@ function renderMatchupChart(matchups) {
             cell.appendChild(winRateText);
 
             const matchesText = document.createElement("div");
-            matchesText.innerText = `(${matches})`;
+            matchesText.innerText = matches;
             matchesText.classList.add("match-number");
             cell.appendChild(matchesText);
 
-            if (_visualizeLine) {
-                cell.style.backgroundColor =
-                    isNaN(win_rate) || matches < _matchThreshold
-                        ? "#000000"
-                        : hsv2rgb(
-                              Math.floor(
-                                  ((checkLine(_k, _d, x, matchups.length - 1 - y) + 1) / 2) * 120
-                              ),
-                              1,
-                              1
-                          );
-            } else {
-                cell.style.backgroundColor = isNaN(win_rate)
-                    ? "#000000"
-                    : hsv2rgb(
-                          Math.floor(win_rate * 120),
-                          matches < _matchThreshold ? 0.4 : 0.6,
-                          matches < _matchThreshold ? 0.3 : 1
-                      );
-            }
+            // if (_visualizeLine) {
+            //     cell.style.backgroundColor =
+            //         isNaN(win_rate) || matches < _matchThreshold
+            //             ? "#000000"
+            //             : hsv2rgb(
+            //                   Math.floor(
+            //                       ((checkLine(_k, _d, x, matchups.length - 1 - y) + 1) / 2) * 120
+            //                   ),
+            //                   1,
+            //                   1
+            //               );
+            // } else {
+            cell.style.backgroundColor = isNaN(win_rate)
+                ? "#000000"
+                : hsv2rgb(
+                      Math.floor(win_rate * 120),
+                      matches < _matchThreshold ? 0.4 : 0.6,
+                      matches < _matchThreshold ? 0.3 : 1
+                  );
+            // }
 
             rowDiv.appendChild(cell);
         });
@@ -421,27 +494,33 @@ function renderMatchupChart(matchups) {
 function updateCanvasSize(chart) {
     const canvas = document.getElementById("grid-canvas");
     const cellSize = chart.clientWidth / (_characterCount + 1);
-    canvas.width = chart.clientWidth - cellSize;
-    canvas.height = chart.clientWidth - cellSize;
-    canvas.style.top = cellSize + "px";
-    canvas.style.left = cellSize + "px";
+    canvas.width = chart.clientWidth - cellSize * 2;
+    canvas.height = chart.clientWidth - cellSize * 2;
+    canvas.style.top = cellSize * 1.5 + "px";
+    canvas.style.left = cellSize * 1.5 + "px";
 }
 
-function drawTrendline(k, d) {
+function drawLine(k, d) {
     const canvas = document.getElementById("grid-canvas");
-
-    const size = canvas.width;
-
-    const pCoord = [Math.max((1 - d) / k, 0) * size, size - Math.min(d, 1) * size];
-    const qCoord = [Math.max(-d / k, 0) * size, size];
-
     const ctx = canvas.getContext("2d");
+    const { width, height } = canvas;
+
+    let y0;
+    let y1;
+    if (k === 0) {
+        const y = height - d * height;
+        y0 = y;
+        y1 = y;
+    } else {
+        y0 = height - d * height;
+        y1 = height - (k * (width / height) + d) * height;
+    }
 
     ctx.beginPath();
-    ctx.moveTo(...pCoord);
-    ctx.lineTo(...qCoord);
-    ctx.strokeStyle = "#4ea9ffaa";
-    ctx.lineWidth = 2;
+    ctx.moveTo(0, y0);
+    ctx.lineTo(width, y1);
+    ctx.strokeStyle = "#4ea9ffcc";
+    ctx.lineWidth = 5;
     ctx.stroke();
 }
 
@@ -504,21 +583,18 @@ const hsv2rgb = (h, s, v) => {
         .join("")}`;
 };
 
-function toggleActionMenu() {
-    document.querySelector(".action-buttons").classList.toggle("collapsed");
-}
-
 function populateDropdown() {
     const characterMask = JSON.parse(localStorage.getItem("characterMask"));
     const dropdownMenu = document.getElementById("dropdown-menu");
     dropdownMenu.innerHTML = "";
+
     CHARACTERS.forEach((item, index) => {
-        const li = document.createElement("li");
-        li.textContent = item;
-        li.onclick = () => toggleItem(index, li);
-        li.classList.add("dropdown-item");
-        if (characterMask[index]) li.classList.add("toggled");
-        dropdownMenu.appendChild(li);
+        const div = document.createElement("div");
+        div.textContent = item;
+        div.onclick = () => toggleItem(index, div);
+        div.classList.add("dropdown-item");
+        if (characterMask[index]) div.classList.add("selected");
+        dropdownMenu.appendChild(div);
     });
 }
 
@@ -528,39 +604,25 @@ function toggleDropdown() {
 }
 
 function toggleItem(index, element) {
-    element.classList.toggle("toggled");
+    element.classList.toggle("selected");
     _characterMask = JSON.parse(localStorage.getItem("characterMask"));
-    _characterMask[index] = element.classList.contains("toggled");
+    _characterMask[index] = element.classList.contains("selected");
     localStorage.setItem("characterMask", JSON.stringify(_characterMask));
     if (_matchupData) reRender(_matchupData);
 }
 
-function toggleFilter() {
-    const button = document.getElementById("toggle-filter-button");
-    button.classList.toggle("toggled");
+function toggleFilter(checked) {
+    localStorage.setItem("filterEnabled", JSON.stringify(checked));
 
-    _filterEnabled = button.classList.contains("toggled");
-    localStorage.setItem("filterEnabled", JSON.stringify(_filterEnabled));
-
-    if (_filterEnabled) {
-        _characterMask = JSON.parse(localStorage.getItem("characterMask"));
-        button.innerText = "Disable Filter";
-    } else {
-        _characterMask = new Array(26).fill(true);
-        button.innerText = "Enable Filter";
-    }
+    _characterMask = checked
+        ? JSON.parse(localStorage.getItem("characterMask"))
+        : new Array(26).fill(true);
     reRender(_matchupData);
 }
 
-function toggleTrendline() {
-    const button = document.getElementById("toggle-line-button");
-    button.classList.toggle("toggled");
-
-    _showTrendline = button.classList.contains("toggled");
-    localStorage.setItem("showTrendline", JSON.stringify(_showTrendline));
-
-    button.innerText = _showTrendline ? "Hide Trendline" : "Show Trendline";
-
+function toggleTrendline(checked) {
+    localStorage.setItem("showTrendline", JSON.stringify(checked));
+    _showTrendline = checked;
     reRender(_matchupData, false);
 }
 
@@ -569,4 +631,9 @@ function handleSliderChange(value) {
     localStorage.setItem("matchThreshold", JSON.stringify(_matchThreshold));
     document.getElementById("match-threshold-slider-value").textContent = value;
     reRender(_matchupData, false);
+}
+
+function toggleSidebar() {
+    const sidebar = document.getElementById("sidebar");
+    sidebar.classList.toggle("show");
 }

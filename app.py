@@ -286,7 +286,9 @@ def update_matchups(P1, P2, weighted: bool = True):
     matches = len(subset)
 
     if not weighted:
+        subset = subset[-100:]
         winrate1 = subset["p1_won"].mean()
+        matches = len(subset)
         if not np.isnan(winrate1):
             winrate = winrate1
     else:
@@ -315,7 +317,7 @@ def process_new_replay(path: str):
     if date not in games_df.index:
         games_df.loc[date] = data
         games_df.to_pickle("db.pkl")
-    process_game(data, True)
+    process_game(data, True, False)
 
 
 def reload_tier_list():
@@ -327,7 +329,7 @@ def reload_tier_list():
 
     # TODO: use games_df["ignored" == False]
     for row in games_df.to_dict(orient="records"):
-        process_game(row)
+        process_game(row, False, False)
 
     print("Tier list recalculation done.")
 

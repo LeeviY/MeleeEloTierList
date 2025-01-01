@@ -8,6 +8,7 @@
         <script src="static/js/matchup.js"></script>
         <link rel="stylesheet" href="static/css/styles.css" />
         <link rel="stylesheet" href="static/css/matchup-styles.css" />
+        <link rel="stylesheet" href="static/css/sidebar-styles.css" />
     </head>
     <body>
         <div class="navbar">
@@ -16,6 +17,58 @@
             <a href="matchup_chart">Matchup Chart</a>
         </div>
         <!-- <h1>Character Matchup Chart</h1> -->
+        <button class="toggle-sidebar" onclick="toggleSidebar()">☰</button>
+
+        <div class="sidebar" id="sidebar">
+            <h2>Options</h2>
+
+            <div class="toggle-buttons">
+                <div class="toggle-container">
+                    <label class="toggle-switch">
+                        <input
+                            id="toggle-filter-button"
+                            oninput="toggleFilter(this.checked)"
+                            type="checkbox"
+                        />
+                        <div class="toggle-switch"></div>
+                    </label>
+                    <span class="toggle-label">Enable Filter</span>
+                </div>
+                <div class="toggle-container">
+                    <label class="toggle-switch">
+                        <input
+                            id="toggle-trendline-button"
+                            oninput="toggleTrendline(this.checked)"
+                            type="checkbox"
+                        />
+                        <div class="toggle-switch"></div>
+                    </label>
+                    <span class="toggle-label">Show Trendline</span>
+                </div>
+            </div>
+
+            <div class="slider-container">
+                <label for="match-threshold-slider">Match Threshold:</label>
+                <div class="slider-wrapper">
+                    <input
+                        id="match-threshold-slider"
+                        type="range"
+                        min="1"
+                        max="100"
+                        value="5"
+                        oninput="handleSliderChange(this.value)"
+                    />
+                    <span id="match-threshold-slider-value">5</span>
+                </div>
+            </div>
+
+            <div class="dropdown">
+                <button class="dropdown-toggle" onclick="toggleDropdown()">
+                    Select Character Filters ▼
+                </button>
+                <div id="dropdown-menu" class="dropdown-menu"></div>
+            </div>
+        </div>
 
         <div class="container">
             <div class="matchup-chart-container">
@@ -23,21 +76,6 @@
                 <div class="matchup-grid-container">
                     <div id="matchup-chart" class="matchup-chart"></div>
                     <canvas id="grid-canvas"></canvas>
-                </div>
-
-                <div class="slider-container">
-                    <div class="slider-wrapper">
-                        <label for="match-threshold-slider">Match Threshold:</label>
-                        <input
-                            id="match-threshold-slider"
-                            type="range"
-                            min="1"
-                            max="100"
-                            value="5"
-                            oninput="handleSliderChange(this.value)"
-                        />
-                        <span id="match-threshold-slider-value">5</span>
-                    </div>
                 </div>
             </div>
 
@@ -73,17 +111,6 @@
                     </div>
                 </template>
             </div>
-        </div>
-        <div class="action-buttons collapsed">
-            <div class="menu-content">
-                <button id="toggle-filter-button" onclick="toggleFilter()">Enable Filter</button>
-                <button id="toggle-line-button" onclick="toggleTrendline()">Show Trendline</button>
-                <div class="dropdown">
-                    <button class="dropdown-toggle" onclick="toggleDropdown()">Characters</button>
-                    <ul id="dropdown-menu" class="dropdown-menu"></ul>
-                </div>
-            </div>
-            <button class="toggle-button" onclick="toggleActionMenu()">≡</button>
         </div>
     </body>
 </html>
