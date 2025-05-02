@@ -80,9 +80,7 @@ def find_replay_directory() -> str:
                     except ValueError:
                         pass
 
-    if latest_dir:
-        print(f"Found latest directory: {latest_dir}")
-    else:
+    if not latest_dir:
         print("No valid directories found.")
 
     return latest_dir

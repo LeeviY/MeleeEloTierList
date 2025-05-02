@@ -3,6 +3,7 @@ import eventlet
 eventlet.monkey_patch()
 import json
 import os
+import sys
 from datetime import datetime
 from pprint import pprint
 from typing import Dict, List, Tuple, Union
@@ -337,21 +338,31 @@ def reload_tier_list():
 def background_task() -> None:
     global character_ratings, games_df
 
-    latest_directory = find_replay_directory()
-    print(f"Watching directory: {latest_directory}")
-
     reload_tier_list()
 
+    print("")
+    spinner = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+    spin_index = 0
+
     while True:
+        latest_directory = find_replay_directory()
+
+        sys.stdout.write(
+            f"\rWatching directory: {latest_directory} {spinner[spin_index]}"
+        )
+        sys.stdout.flush()
+        spin_index = (spin_index + 1) % len(spinner)
+
         new_file = detect_new_files(games_df, latest_directory)
         if new_file != "":
-            print(f"Found new replay: {new_file}")
+            print(f"\nFound new replay: {new_file}")
 
             path = os.path.join(latest_directory, new_file)
             while is_file_locked(path):
                 eventlet.sleep(0.5)
 
             process_new_replay(path)
+            print("Processing new replay done.")
 
             emit_all()
 
