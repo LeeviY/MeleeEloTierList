@@ -7,5 +7,5 @@ ALLOW_EXIT = False
 
 EXTRA_DIRS = [f"{os.path.dirname(os.path.abspath(__file__))}\\2024-12"]
 
-DEFAULT_PLAYER_PORTS = {"P1": 2, "P2": 4}
+DEFAULT_PLAYER_PORTS = {"P1": 3, "P2": 2}
 PLAYER_CODES = {"P1": "LY＃863", "P2": "KEKW＃849"}
