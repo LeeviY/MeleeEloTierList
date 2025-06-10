@@ -176,7 +176,7 @@ def update_tiers(
 
     E_p = lambda R_a, R_b: 1.0 / (1.0 + pow(10, ((R_b - R_a) / 400)))
     R_n = lambda R, K, S, E: R + K * (S - E)
-    K = lambda m: max(800 / m, 100)
+    K = lambda m: max(800 / m, 50)
 
     p1_char["elo"] = R_n(
         p1_rating,
