@@ -46,22 +46,25 @@ let _tierList = null;
 
 function updateTierList(data) {
     _tierList = data;
+    console.log(data);
     renderPlayerTierList("P1", data.P1);
     renderPlayerTierList("P2", data.P2);
-    alignTiers(Object.keys(eloToTiers(data.P1)).map(Function.prototype.call, String.prototype.toLowerCase));
+    alignTiers(
+        Object.keys(eloToTiers(data.P1)).map(Function.prototype.call, String.prototype.toLowerCase)
+    );
 }
 
 function eloToTiers(characters) {
     const tierList = { S: [], A: [], B: [], C: [], D: [], F: [] };
     console.log(characters.entries());
     for (const [i, character] of characters.entries()) {
-        const rating = character["elo"];
+        const rating = character["raiting"];
         let tier = "";
-        if (rating >= 2000) tier = "S";
-        else if (rating >= 1800) tier = "A";
-        else if (rating >= 1600) tier = "B";
-        else if (rating >= 1400) tier = "C";
-        else if (rating >= 1200) tier = "D";
+        if (rating >= 1) tier = "S";
+        else if (rating >= 0.5) tier = "A";
+        else if (rating >= 0) tier = "B";
+        else if (rating >= -0.5) tier = "C";
+        else if (rating >= -1) tier = "D";
         else tier = "F";
 
         tierList[tier].push({
@@ -69,6 +72,7 @@ function eloToTiers(characters) {
             name: CHARACTERS[i],
             rating: rating,
             matches: character["matches"],
+            volatility: character["sigma"],
         });
     }
     return tierList;
@@ -104,7 +108,8 @@ function renderPlayerTierList(playerId, ratings) {
             itemDiv.appendChild(img);
             const ratingText = document.createElement("p");
             ratingText.classList.add("item-rating");
-            ratingText.textContent = `${Math.round(item.rating)}(${item.matches})`;
+            ratingText.textContent = `${Math.round(item.rating)}(${item.matches})\n
+            ${Math.round(item.volatility)}`;
             itemDiv.appendChild(ratingText);
             tierItemsContainer.appendChild(itemDiv);
         });
@@ -124,7 +129,7 @@ function highlightImages(playerId, id) {
         CHARACTERS[
             Object.entries(_tierList[otherPlayerId]).reduce(
                 (closest, [index, character]) => {
-                    const delta = Math.abs(character.elo - referenceCharacter.elo);
+                    const delta = Math.abs(character.raiting - referenceCharacter.raiting);
                     return delta < closest.delta ? { index, delta } : closest;
                 },
                 { index: null, delta: Infinity }
@@ -254,7 +259,9 @@ function toggleAllowExit() {
         .then((response) => response.json())
         .then((data) => {
             ALLOW_EXIT = !ALLOW_EXIT;
-            document.getElementById("allow-exit-button").innerText = `Allow Quitting: ${ALLOW_EXIT}`;
+            document.getElementById(
+                "allow-exit-button"
+            ).innerText = `Allow Quitting: ${ALLOW_EXIT}`;
             console.log(data);
         })
         .catch((err) => {

@@ -15,6 +15,7 @@ from flask_socketio import SocketIO, emit
 from slippi import id
 
 import database
+import glicko
 import settings
 from utils.files import (
     detect_new_files,
@@ -57,7 +58,6 @@ matchup_chart = [[{"win_rate": "nan", "matches": 0}] * 26 for _ in range(26)]
 ### Routing
 @app.route("/")
 def tier_list():
-    global character_ratings
     return render_template("index.html")
 
 
@@ -159,87 +159,60 @@ def emit_all():
 
 ### Logic
 def update_tiers(
-    p1: Dict[str, Union[id.CSSCharacter, bool]],
-    p2: Dict[str, Union[id.CSSCharacter, bool]],
-) -> Dict[str, List[Dict[str, int]]]:
-    global last_results, character_ratings, games_df
-    if not p1 or not p2:
-        return None
+    previous_ratings: Dict[str, List[Dict[str, float]]],
+    rating_period_games: List[Dict[str, Union[id.CSSCharacter, bool]]],
+) -> Dict[str, List[Dict[str, float]]]:
+    games_per_character = {"P1": [[]] * 26, "P2": [[]] * 26}
 
-    p1_char = character_ratings["P1"][p1["character"]]
-    p2_char = character_ratings["P2"][p2["character"]]
-    p1_rating = p1_char["elo"]
-    p2_rating = p2_char["elo"]
+    for game in rating_period_games:
+        games_per_character["P1"][game["p1"]].append(
+            {
+                "opponent_rating": previous_ratings["P2"][game["p2"]]["rating"],
+                "opponent_rd": previous_ratings["P2"][game["p2"]]["rd"],
+                "score": int(game["p1_won"]),
+            }
+        )
 
-    p1_char["matches"] += 1
-    p2_char["matches"] += 1
+        games_per_character["P2"][game["p2"]].append(
+            {
+                "opponent_rating": previous_ratings["P1"][game["p1"]]["rating"],
+                "opponent_rd": previous_ratings["P1"][game["p1"]]["rd"],
+                "score": int(game["p2_won"]),
+            }
+        )
 
-    E_p = lambda R_a, R_b: 1.0 / (1.0 + pow(10, ((R_b - R_a) / 400)))
-    R_n = lambda R, K, S, E: R + K * (S - E)
-    K = lambda m: max(800 / m, 50)
+    print(games_per_character["P1"][0])
 
-    p1_char["elo"] = R_n(
-        p1_rating,
-        K(p1_char["matches"]),
-        int(p1["won"]),
-        E_p(p1_rating, p2_rating),
-    )
-    p2_char["elo"] = R_n(
-        p2_rating,
-        K(p2_char["matches"]),
-        int(p2["won"]),
-        E_p(p2_rating, p1_rating),
-    )
+    new_ratings = {
+        "P1": [x for x in previous_ratings["P1"]],
+        "P2": [x for x in previous_ratings["P2"]],
+    }
 
-    last_results.append(
-        {
-            "P1": {
-                "character": id.CSSCharacter(p1["character"]).name,
-                "delta": p1_char["elo"] - p1_rating,
-            },
-            "P2": {
-                "character": id.CSSCharacter(p2["character"]).name,
-                "delta": p2_char["elo"] - p2_rating,
-            },
-        }
-    )
-    last_results = last_results[1:]
+    for player, characters_results in games_per_character.items():
+        for i, character_results in enumerate(characters_results):
+            new_raiting = glicko.glicko2_rating_update(
+                previous_ratings[player][i], character_results
+            )
+            new_ratings[player][i] = new_raiting
 
+    return new_ratings
 
-# def elo_to_tiers(
-#     tiers: Dict[str, List[Dict[str, int]]]
-# ) -> Dict[str, List[Dict[str, Union[str, int]]]]:
-#     tier_list = {}
-#     for player, characters in tiers.items():
-#         tier_list[player] = {"S": [], "A": [], "B": [], "C": [], "D": [], "F": []}
-#         for i, character in enumerate(characters):
-#             rating = character["elo"]
-#             tier = ""
-#             if rating >= 2000:
-#                 tier = "S"
-#             elif rating >= 1800:
-#                 tier = "A"
-#             elif rating >= 1600:
-#                 tier = "B"
-#             elif rating >= 1400:
-#                 tier = "C"
-#             elif rating >= 1200:
-#                 tier = "D"
-#             else:
-#                 tier = "F"
-
-#             tier_list[player][tier].append(
-#                 {
-#                     "name": id.CSSCharacter(i).name,
-#                     "rating": rating,
-#                     "matches": character["matches"],
-#                 }
-#             )
-
-#     return tier_list
+    # last_results.append(
+    #     {
+    #         "P1": {
+    #             "character": str(p1["character"]),
+    #             "delta": mu1_new - mu1_old,
+    #         },
+    #         "P2": {
+    #             "character": str(p2["character"]),
+    #             "delta": mu2_new - mu2_old,
+    #         },
+    #     }
+    # )
+    # last_results = last_results[1:]
 
 
-def process_game(
+def process_games(
     data: Dict[str, Union[int, str]], debug_print: bool = False, weighted: bool = True
 ) -> None:
     global player_ports
@@ -321,16 +294,62 @@ def process_new_replay(path: str):
     process_game(data, True, False)
 
 
+def filter_relevant_games(games: pd.DataFrame) -> List:
+    global player_ports, games_list
+    rating_period_games = []
+    for _, game in games.iterrows():
+        game = game.to_dict()
+
+        if not game or game["ignore"]:
+            return
+
+        if game["frames"] / 60 < settings.MIN_GAME_DURATION_SECONDS:
+            return
+
+        if not settings.ALLOW_EXIT and game["end_type"] == 7:
+            return
+
+        # Redefine the winner as the non quitter.
+        lras_initiator = game["lras_initiator"]
+        if lras_initiator != None and not np.isnan(lras_initiator):
+            game["p1_won"] = game["p1_port"] != lras_initiator
+            game["p2_won"] = game["p2_port"] != lras_initiator
+
+        rating_period_games.append(
+            {
+                "p1": id.CSSCharacter(game["p1_character"]),
+                "p1_won": game["p1_won"],
+                "p2": id.CSSCharacter(game["p2_character"]),
+                "p2_won": game["p2_won"],
+            }
+        )
+
+    return rating_period_games
+
+
 def reload_tier_list():
     global character_ratings, matchup_chart
-    with open(settings.TIER_FILE_BASE, "r") as file:
-        character_ratings = json.load(file)
+    character_ratings = {
+        "P1": [{"rating": 1500, "rd": 350, "volatility": 0.06}] * 26,
+        "P2": [{"rating": 1500, "rd": 350, "volatility": 0.06}] * 26,
+    }
 
     matchup_chart = [[{"win_rate": "nan", "matches": 0}] * 26 for _ in range(26)]
 
+    games_list = []
     # TODO: use games_df["ignored" == False]
-    for row in games_df.to_dict(orient="records"):
-        process_game(row, False, False)
+    games_df.index = pd.to_datetime(games_df.index, utc=True)
+    for _, group in games_df.groupby(games_df.index.date):
+        relevant_games = filter_relevant_games(group)
+        if relevant_games:
+            games_list.append(relevant_games)
+
+    print("Game filtering done.")
+
+    for raiting_period in games_list:
+        character_ratings = update_tiers(character_ratings, raiting_period)
+        print(character_ratings["P1"][0])
+        print(character_ratings["P1"][1])
 
     print("Tier list recalculation done.")
 
@@ -339,6 +358,10 @@ def background_task() -> None:
     global character_ratings, games_df
 
     reload_tier_list()
+
+    print(character_ratings)
+
+    exit()
 
     print("")
     spinner = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
