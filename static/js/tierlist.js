@@ -46,9 +46,13 @@ let _tierList = null;
 
 function updateTierList(data) {
     _tierList = data;
-    console.log(data);
+    console.log("data:", data);
     renderPlayerTierList("P1", data.P1);
     renderPlayerTierList("P2", data.P2);
+    const ratings = data.P1.map((obj) => obj.rating).concat(data.P2.map((obj) => obj.rating));
+    const maxRaiting = Math.max(...ratings);
+    const minRaiting = Math.min(...ratings);
+    console.log("max:", maxRaiting, "min:", minRaiting);
     alignTiers(
         Object.keys(eloToTiers(data.P1)).map(Function.prototype.call, String.prototype.toLowerCase)
     );
@@ -56,15 +60,14 @@ function updateTierList(data) {
 
 function eloToTiers(characters) {
     const tierList = { S: [], A: [], B: [], C: [], D: [], F: [] };
-    console.log(characters.entries());
     for (const [i, character] of characters.entries()) {
-        const rating = character["raiting"];
+        const rating = character["rating"];
         let tier = "";
-        if (rating >= 1) tier = "S";
-        else if (rating >= 0.5) tier = "A";
-        else if (rating >= 0) tier = "B";
-        else if (rating >= -0.5) tier = "C";
-        else if (rating >= -1) tier = "D";
+        if (rating >= 1800) tier = "S";
+        else if (rating >= 1650) tier = "A";
+        else if (rating >= 1500) tier = "B";
+        else if (rating >= 1350) tier = "C";
+        else if (rating >= 1200) tier = "D";
         else tier = "F";
 
         tierList[tier].push({
@@ -72,7 +75,7 @@ function eloToTiers(characters) {
             name: CHARACTERS[i],
             rating: rating,
             matches: character["matches"],
-            volatility: character["sigma"],
+            volatility: character["volatility"],
         });
     }
     return tierList;
@@ -108,9 +111,14 @@ function renderPlayerTierList(playerId, ratings) {
             itemDiv.appendChild(img);
             const ratingText = document.createElement("p");
             ratingText.classList.add("item-rating");
-            ratingText.textContent = `${Math.round(item.rating)}(${item.matches})\n
-            ${Math.round(item.volatility)}`;
+            ratingText.textContent = `${Math.round(item.rating)}(${item.matches})`;
             itemDiv.appendChild(ratingText);
+
+            const volatilityText = document.createElement("p");
+            volatilityText.classList.add("item-rating");
+            volatilityText.textContent = `${Math.round(item.volatility * 10000) / 10000}`;
+            itemDiv.appendChild(volatilityText);
+
             tierItemsContainer.appendChild(itemDiv);
         });
 
@@ -129,7 +137,7 @@ function highlightImages(playerId, id) {
         CHARACTERS[
             Object.entries(_tierList[otherPlayerId]).reduce(
                 (closest, [index, character]) => {
-                    const delta = Math.abs(character.raiting - referenceCharacter.raiting);
+                    const delta = Math.abs(character.rating - referenceCharacter.rating);
                     return delta < closest.delta ? { index, delta } : closest;
                 },
                 { index: null, delta: Infinity }

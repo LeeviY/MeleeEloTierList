@@ -46,7 +46,9 @@ character_ratings = {}
 
 ignored_games = set()
 
-matchup_chart = [[{"win_rate": "nan", "matches": 0}] * 26 for _ in range(26)]
+matchup_chart = [
+    [{"win_rate": "nan", "matches": 0} for _ in range(26)] for _ in range(26)
+]
 
 
 ### TODO:
@@ -162,7 +164,7 @@ def update_tiers(
     previous_ratings: Dict[str, List[Dict[str, float]]],
     rating_period_games: List[Dict[str, Union[id.CSSCharacter, bool]]],
 ) -> Dict[str, List[Dict[str, float]]]:
-    games_per_character = {"P1": [[]] * 26, "P2": [[]] * 26}
+    games_per_character = {"P1": [[] for _ in range(26)], "P2": [[] for _ in range(26)]}
 
     for game in rating_period_games:
         games_per_character["P1"][game["p1"]].append(
@@ -181,8 +183,6 @@ def update_tiers(
             }
         )
 
-    print(games_per_character["P1"][0])
-
     new_ratings = {
         "P1": [x for x in previous_ratings["P1"]],
         "P2": [x for x in previous_ratings["P2"]],
@@ -190,12 +190,15 @@ def update_tiers(
 
     for player, characters_results in games_per_character.items():
         for i, character_results in enumerate(characters_results):
-            new_raiting = glicko.glicko2_rating_update(
+            new_rating = glicko.glicko2_rating_update(
                 previous_ratings[player][i], character_results
             )
-            new_ratings[player][i] = new_raiting
+            new_rating["matches"] = new_ratings[player][i]["matches"] + len(
+                character_results
+            )
 
-    return new_ratings
+            new_ratings[player][i] = new_rating
+        # exit()
 
     # last_results.append(
     #     {
@@ -210,6 +213,8 @@ def update_tiers(
     #     }
     # )
     # last_results = last_results[1:]
+
+    return new_ratings
 
 
 def process_games(
@@ -291,23 +296,25 @@ def process_new_replay(path: str):
     if date not in games_df.index:
         games_df.loc[date] = data
         games_df.to_pickle("db.pkl")
-    process_game(data, True, False)
+    # process_game(data, True, False)
 
 
 def filter_relevant_games(games: pd.DataFrame) -> List:
     global player_ports, games_list
     rating_period_games = []
+    count = 0
     for _, game in games.iterrows():
+        count += 1
         game = game.to_dict()
 
         if not game or game["ignore"]:
-            return
+            continue
 
         if game["frames"] / 60 < settings.MIN_GAME_DURATION_SECONDS:
-            return
+            continue
 
         if not settings.ALLOW_EXIT and game["end_type"] == 7:
-            return
+            continue
 
         # Redefine the winner as the non quitter.
         lras_initiator = game["lras_initiator"]
@@ -324,32 +331,53 @@ def filter_relevant_games(games: pd.DataFrame) -> List:
             }
         )
 
+    # print(count)
+
     return rating_period_games
 
 
 def reload_tier_list():
     global character_ratings, matchup_chart
     character_ratings = {
-        "P1": [{"rating": 1500, "rd": 350, "volatility": 0.06}] * 26,
-        "P2": [{"rating": 1500, "rd": 350, "volatility": 0.06}] * 26,
+        "P1": [
+            {"rating": 1500, "rd": 350, "volatility": 0.06, "matches": 0}
+            for _ in range(26)
+        ],
+        "P2": [
+            {"rating": 1500, "rd": 350, "volatility": 0.06, "matches": 0}
+            for _ in range(26)
+        ],
     }
 
-    matchup_chart = [[{"win_rate": "nan", "matches": 0}] * 26 for _ in range(26)]
+    matchup_chart = [
+        [{"win_rate": "nan", "matches": 0} for _ in range(26)] for _ in range(26)
+    ]
 
     games_list = []
     # TODO: use games_df["ignored" == False]
     games_df.index = pd.to_datetime(games_df.index, utc=True)
-    for _, group in games_df.groupby(games_df.index.date):
+    groups = games_df.groupby(games_df.index.date)
+    print(groups)
+    count = 0
+    for _, group in groups:
+        count += 1
         relevant_games = filter_relevant_games(group)
         if relevant_games:
             games_list.append(relevant_games)
 
+            for game in relevant_games:
+                update_matchups(
+                    {"character": id.CSSCharacter(game["p1"]), "won": game["p1_won"]},
+                    {"character": id.CSSCharacter(game["p2"]), "won": game["p2_won"]},
+                    False,
+                )
+
+    print(count)
+
     print("Game filtering done.")
 
-    for raiting_period in games_list:
-        character_ratings = update_tiers(character_ratings, raiting_period)
-        print(character_ratings["P1"][0])
-        print(character_ratings["P1"][1])
+    for rating_period in games_list:
+        character_ratings = update_tiers(character_ratings, rating_period)
 
     print("Tier list recalculation done.")
 
@@ -359,9 +387,9 @@ def background_task() -> None:
 
     reload_tier_list()
 
-    print(character_ratings)
+    # print(character_ratings)
 
-    exit()
+    # exit()
 
     print("")
     spinner = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
@@ -405,7 +433,9 @@ if __name__ == "__main__":
     #     True,
     # )
 
-    # games_df.to_csv("db.csv")
+    games_df.to_csv("db.csv")
+
+    print(id.CSSCharacter.SHEIK)
 
     socketio.start_background_task(target=background_task)
     socketio.run(app, debug=True, use_reloader=False)
