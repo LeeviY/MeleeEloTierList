@@ -109,6 +109,18 @@ def glicko2_rating_update(player_rating, game_results):
     }
 
 
+def win_probability(rating_A, rating_B, RD_B):
+    mu_A = (rating_A - MU) / SCALE
+    mu_B = (rating_B - MU) / SCALE
+    phi_B = RD_B / SCALE
+
+    g_phi = 1 / np.sqrt(1 + 3 * phi_B**2 / np.pi**2)
+    exponent = -g_phi * (mu_A - mu_B)
+    E_A = 1 / (1 + np.exp(exponent))
+
+    return E_A
+
+
 if __name__ == "__main__":
     # test should result in {'rating': 1464.06, 'rd': 151.52, 'volatility': 0.05999}
     player_rating = {"rating": 1500, "rd": 200, "volatility": 0.06}
@@ -118,6 +130,8 @@ if __name__ == "__main__":
         {"opponent_rating": 1550, "opponent_rd": 100, "score": 0},
         {"opponent_rating": 1700, "opponent_rd": 300, "score": 0},
     ]
+
+    print(win_probability(1122, 1976, 111))
 
     updated_rating = glicko2_rating_update(player_rating, game_results)
     print(updated_rating)

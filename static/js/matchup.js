@@ -659,11 +659,6 @@ function handleSliderChange(value) {
     reRender(_matchupData, false);
 }
 
-function toggleSidebar() {
-    const sidebar = document.getElementById("sidebar");
-    sidebar.classList.toggle("show");
-}
-
 function toggleDifference(checked) {
     _abosluteDifferenceMode = checked;
     localStorage.setItem("abosluteDifferenceMode", JSON.stringify(_abosluteDifferenceMode));

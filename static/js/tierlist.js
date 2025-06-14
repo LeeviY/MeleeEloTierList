@@ -1,5 +1,7 @@
 document.addEventListener("DOMContentLoaded", () => {
     fetchPorts();
+
+    document.getElementById("toggle-rank-distribution-button").checked = _isNormalRanks;
 });
 
 const socket = io.connect("http://127.0.0.1:5000");
@@ -42,6 +44,15 @@ const CHARACTERS = [
     "GANONDORF",
 ];
 
+_isNormalRanks = false;
+
+loadLocalStorage();
+
+function loadLocalStorage() {
+    _isNormalRanks = JSON.parse(localStorage.getItem("normalRanks")) || false;
+    localStorage.setItem("normalRanks", JSON.stringify(_isNormalRanks));
+}
+
 let _tierList = null;
 
 function updateTierList(data) {
@@ -63,12 +74,22 @@ function eloToTiers(characters) {
     for (const [i, character] of characters.entries()) {
         const rating = character["rating"];
         let tier = "";
-        if (rating >= 1800) tier = "S";
-        else if (rating >= 1650) tier = "A";
-        else if (rating >= 1500) tier = "B";
-        else if (rating >= 1350) tier = "C";
-        else if (rating >= 1200) tier = "D";
-        else tier = "F";
+
+        if (_isNormalRanks) {
+            if (rating >= 1605) tier = "S";
+            else if (rating >= 1454) tier = "A";
+            else if (rating >= 1386) tier = "B";
+            else if (rating >= 1235) tier = "C";
+            else if (rating >= 1154) tier = "D";
+            else tier = "F";
+        } else {
+            if (rating >= 1800) tier = "S";
+            else if (rating >= 1600) tier = "A";
+            else if (rating >= 1400) tier = "B";
+            else if (rating >= 1200) tier = "C";
+            else if (rating >= 1000) tier = "D";
+            else tier = "F";
+        }
 
         tierList[tier].push({
             id: i,
@@ -193,13 +214,20 @@ function renderLastResults(results) {
             const itemDiv = document.createElement("div");
             itemDiv.classList.add("item");
             itemDiv.style.float = player == "P1" ? "left" : "right";
+
             const img = document.createElement("img");
             img.src = `/static/images/${CHARACTERS[items.character]}.png`;
             itemDiv.appendChild(img);
+
             const ratingText = document.createElement("p");
             ratingText.classList.add("item-rating");
             ratingText.textContent = `${Math.round(items.delta)}`;
             itemDiv.appendChild(ratingText);
+
+            const probabilityText = document.createElement("p");
+            probabilityText.classList.add("item-rating");
+            probabilityText.textContent = `${Math.round(items.probability)}`;
+
             resultDiv.appendChild(itemDiv);
         }
         const clear = document.createElement("div");
@@ -354,4 +382,11 @@ async function handleEndDateChange() {
     } catch (error) {
         console.error("Error setting date:", error);
     }
+}
+
+function toggleRankDistribution(value) {
+    _isNormalRanks = value;
+    localStorage.setItem("normalRanks", JSON.stringify(_isNormalRanks));
+    updateTierList(_tierList);
+    document.getElementById("toggle-rank-distribution-button").checked = _isNormalRanks;
 }

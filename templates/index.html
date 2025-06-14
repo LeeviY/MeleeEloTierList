@@ -5,18 +5,40 @@
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>Tier List Viewer</title>
         <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
+        <script src="static/js/sidebar.js"></script>
         <script src="static/js/tierlist.js"></script>
-        <script src="static/js/reset.js"></script>
         <link rel="stylesheet" href="static/css/styles.css" />
         <link rel="stylesheet" href="static/css/tierlist-styles.css" />
+        <link rel="stylesheet" href="static/css/sidebar-styles.css" />
     </head>
 
     <body>
         <div class="navbar">
-            <a href="#">Tier List (elo)</a>
-            <a href="#">Tier List (stocks)</a>
+            <a href="#">Tier List</a>
+            <a href="stats">Stats</a>
             <a href="matchup_chart">Matchup Chart</a>
         </div>
+
+        <button class="toggle-sidebar" onclick="toggleSidebar()">☰</button>
+
+        <div class="sidebar" id="sidebar">
+            <h2>Options</h2>
+
+            <div class="toggle-buttons">
+                <div class="toggle-container">
+                    <label class="toggle-switch">
+                        <input
+                            id="toggle-rank-distribution-button"
+                            oninput="toggleRankDistribution(this.checked)"
+                            type="checkbox"
+                        />
+                        <div class="toggle-switch"></div>
+                    </label>
+                    <span class="toggle-label">Enable Normal Ranks</span>
+                </div>
+            </div>
+        </div>
+
         <div class="container">
             <!-- Player 1's Tier List -->
             <div class="tier-list-container">

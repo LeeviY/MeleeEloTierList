@@ -4,7 +4,7 @@ eventlet.monkey_patch()
 import json
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from pprint import pprint
 from typing import Dict, List, Tuple, Union
 from time import time
@@ -14,6 +14,8 @@ import pandas as pd
 from flask import Flask, jsonify, render_template, request
 from flask_socketio import SocketIO, emit
 from slippi import id
+
+# from sklearn.cluster import DBSCAN
 
 import database
 import glicko
@@ -67,10 +69,21 @@ def matchup_charts():
     return render_template("matchup.html")
 
 
+@app.route("/stats", methods=["GET"])
+def stats():
+    return render_template("stats.html")
+
+
 @app.route("/matchups", methods=["GET"])
 def matchups():
     global matchup_chart
     return jsonify(matchup_chart)
+
+
+@app.route("/character_ratings", methods=["GET"])
+def get_character_ratings():
+    global character_ratings
+    return jsonify(character_ratings)
 
 
 @app.route("/reset", methods=["POST"])
@@ -243,23 +256,33 @@ def process_new_replay(path: str):
         games_df.loc[date] = data
         # games_df.to_pickle("db.pkl")
 
-    p1_old_rating = character_ratings["P1"][data["p1_character"]]["rating"]
-    p2_old_rating = character_ratings["P2"][data["p2_character"]]["rating"]
+    p1_character_rating = character_ratings["P1"][data["p1_character"]]
+    p2_character_rating = character_ratings["P2"][data["p2_character"]]
+
+    p1_old_rating = p1_character_rating["rating"]
+    p2_old_rating = p2_character_rating["rating"]
 
     reload_tier_list(games_df)
-
-    p1_new_rating = character_ratings["P1"][data["p1_character"]]["rating"]
-    p2_new_rating = character_ratings["P2"][data["p2_character"]]["rating"]
 
     last_results.append(
         {
             "P1": {
                 "character": data["p1_character"],
-                "delta": p1_new_rating - p1_old_rating,
+                "delta": p1_character_rating["rating"] - p1_old_rating,
+                "probability": glicko.win_probability(
+                    p1_character_rating["rating"],
+                    p2_character_rating["rating"],
+                    p2_character_rating["rd"],
+                ),
             },
             "P2": {
                 "character": data["p2_character"],
-                "delta": p2_new_rating - p2_old_rating,
+                "delta": p2_character_rating["rating"] - p2_old_rating,
+                "probability": glicko.win_probability(
+                    p2_character_rating["rating"],
+                    p1_character_rating["rating"],
+                    p1_character_rating["rd"],
+                ),
             },
         }
     )
@@ -334,13 +357,37 @@ def reload_tier_list(df: pd.DataFrame):
     filtered_games_df.index = pd.to_datetime(filtered_games_df.index, utc=True)
     rating_periods = filtered_games_df.groupby(filtered_games_df.index.date)
     print("rating periods:", len(rating_periods))
-    for _, rating_period in rating_periods:
-        character_ratings = update_tiers(
-            character_ratings,
-            rating_period[["p1_character", "p2_character", "p1_won", "p2_won"]],
-        )
+    min_date = filtered_games_df.index.min().date()
+    max_date = filtered_games_df.index.max().date()
+
+    columns = ["p1_character", "p2_character", "p1_won", "p2_won"]
+    current_date = min_date
+    while current_date <= max_date:
+        if current_date in rating_periods.groups:
+            daily_games = rating_periods.get_group(current_date)[columns]
+        else:
+            daily_games = pd.DataFrame(columns=columns)
+
+        character_ratings = update_tiers(character_ratings, daily_games)
+
+        current_date += timedelta(days=1)
 
     print(f"Tier list recalculation done: {round(time() - start, 2)}s")
+
+    # ratings = []
+    # for player, characters in character_ratings.items():
+    #     for i, character in enumerate(characters):
+    #         ratings.append((f"{player}_{id.CSSCharacter(i).name}", character["rating"]))
+
+    # ratings = sorted(ratings, key=lambda x: x[1])
+    # max_rating = ratings[-1][1]
+    # min_rating = ratings[0][1]
+    # ratings = [(n, (x - min_rating) / max_rating) for n, x in ratings]
+    # values = np.array([v for _, v in ratings]).reshape(-1, 1)
+    # clustering = DBSCAN(eps=0.01, min_samples=2).fit(values)
+
+    # for (label, value), cluster_label in zip(ratings, clustering.labels_):
+    #     print(f"{label}: value={value}, cluster={cluster_label}")
 
 
 def background_task() -> None:
