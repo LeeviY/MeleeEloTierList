@@ -160,23 +160,25 @@ def emit_all():
 
 def update_tiers(
     previous_ratings: Dict[str, List[Dict[str, float]]],
-    rating_period_games: List[Dict[str, Union[id.CSSCharacter, bool]]],
+    rating_period_games: pd.DataFrame,
 ) -> Dict[str, List[Dict[str, float]]]:
     games_per_character = {"P1": [[] for _ in range(26)], "P2": [[] for _ in range(26)]}
+    for _, game in rating_period_games.iterrows():
+        p1_character = game["p1_character"]
+        p2_character = game["p2_character"]
 
-    for game in rating_period_games:
-        games_per_character["P1"][game["p1"]].append(
+        games_per_character["P1"][p1_character].append(
             {
-                "opponent_rating": previous_ratings["P2"][game["p2"]]["rating"],
-                "opponent_rd": previous_ratings["P2"][game["p2"]]["rd"],
+                "opponent_rating": previous_ratings["P2"][p2_character]["rating"],
+                "opponent_rd": previous_ratings["P2"][p2_character]["rd"],
                 "score": int(game["p1_won"]),
             }
         )
 
-        games_per_character["P2"][game["p2"]].append(
+        games_per_character["P2"][p2_character].append(
             {
-                "opponent_rating": previous_ratings["P1"][game["p1"]]["rating"],
-                "opponent_rd": previous_ratings["P1"][game["p1"]]["rd"],
+                "opponent_rating": previous_ratings["P1"][p1_character]["rating"],
+                "opponent_rd": previous_ratings["P1"][p1_character]["rd"],
                 "score": int(game["p2_won"]),
             }
         )
@@ -215,6 +217,7 @@ def update_tiers(
 
 
 def update_matchups(
+    subset: pd.DataFrame,
     p1_character: id.CSSCharacter,
     p2_character: id.CSSCharacter,
     weighted: bool = False,
@@ -222,34 +225,23 @@ def update_matchups(
     # Matchup chart is stored from the perspective of P1.
     global matchup_chart
 
-    subset = games_df[
-        (games_df["p1_character"] == p1_character)
-        & (games_df["p2_character"] == p2_character)
-        & (games_df["p1_code"] == settings.PLAYER_CODES["P1"])
-        & (games_df["end_type"] != 7)
-    ]
+    if subset.empty:
+        matchup_chart[p1_character][p2_character] = {
+            "win_rate": "nan",
+            "matches": 0,
+        }
+        return
 
-    winrate = "nan"
+    subset = subset[-100:]
     matches = len(subset)
 
-    if not weighted:
-        subset = subset[-100:]
-        winrate1 = subset["p1_won"].mean()
-        matches = len(subset)
-        if not np.isnan(winrate1):
-            winrate = winrate1
+    if weighted:
+        weights = np.exp(-0.1 * np.arange(matches - 1, -1, -1))
+        winrate1 = np.average(subset["p1_won"], weights=weights)
     else:
-        # weight_func = lambda x: 1.1 ** (1 - x)
-        weight_func = lambda x: np.e ** (-0.1 * (x - 1))
-        subset = subset[-100:]
-        matches = len(subset)
+        winrate1 = subset["p1_won"].mean()
 
-        if not subset.empty:
-            weights = np.array([weight_func(i) for i in reversed(range(len(subset)))])
-            winrate1 = (subset["p1_won"] * weights).sum() / weights.sum()
-
-            if not np.isnan(winrate1):
-                winrate = winrate1
+    winrate = winrate1 if not np.isnan(winrate1) else "nan"
 
     matchup_chart[p1_character][p2_character] = {
         "win_rate": winrate,
@@ -284,18 +276,12 @@ def filter_relevant_games(games: pd.DataFrame) -> List[dict]:
         filtered["p2_port"] != filtered["lras_initiator"]
     )
 
-    return [
-        {
-            "p1": id.CSSCharacter(row["p1_character"]),
-            "p1_won": row["p1_won"],
-            "p2": id.CSSCharacter(row["p2_character"]),
-            "p2_won": row["p2_won"],
-        }
-        for _, row in filtered.iterrows()
+    return filtered[
+        ["p1_code", "p1_character", "p2_character", "p1_won", "p2_won", "end_type"]
     ]
 
 
-def reload_tier_list():
+def reload_tier_list(df: pd.DataFrame):
     global character_ratings, matchup_chart
     character_ratings = {
         "P1": [
@@ -314,36 +300,46 @@ def reload_tier_list():
 
     # Filter games.
     start = time()
-    games_list = []
-    # TODO: use games_df["ignored" == False]
-    games_df.index = pd.to_datetime(games_df.index, utc=True)
-    groups = games_df.groupby(games_df.index.date)
-    print("rating periods:", len(groups))
-    for _, group in groups:
-        relevant_games = filter_relevant_games(group)
-        if len(relevant_games) > 0:
-            print(len(relevant_games))
-            games_list.append(relevant_games)
+    filtered_games_df = filter_relevant_games(df.copy())
     print(f"Game filtering done: {round(time() - start, 2)}s")
 
     # Recalculate matchups.
     start = time()
+    # Matchup chart is stored from the perspective of P1.
+    matchup_pairs_df = filtered_games_df[
+        (filtered_games_df["p1_code"] == settings.PLAYER_CODES["P1"])
+        & (filtered_games_df["end_type"] != 7)
+    ].groupby(["p1_character", "p2_character"])
+
     for p1_character in range(0, 26):
         for p2_character in range(0, 26):
-            update_matchups(p1_character, p2_character)
+            key = (p1_character, p2_character)
+            matchup_pair = (
+                matchup_pairs_df.get_group(key)
+                if key in matchup_pairs_df.groups
+                else pd.DataFrame()
+            )
+            update_matchups(matchup_pair, p1_character, p2_character)
     print(f"Matchup recalculation done: {round(time() - start, 2)}s")
 
     # Recalculate tiers.
     start = time()
-    for rating_period in games_list:
-        character_ratings = update_tiers(character_ratings, rating_period)
+    filtered_games_df.index = pd.to_datetime(filtered_games_df.index, utc=True)
+    rating_periods = filtered_games_df.groupby(filtered_games_df.index.date)
+    print("rating periods:", len(rating_periods))
+    for _, rating_period in rating_periods:
+        character_ratings = update_tiers(
+            character_ratings,
+            rating_period[["p1_character", "p2_character", "p1_won", "p2_won"]],
+        )
+
     print(f"Tier list recalculation done: {round(time() - start, 2)}s")
 
 
 def background_task() -> None:
     global character_ratings, games_df
 
-    reload_tier_list()
+    reload_tier_list(games_df)
 
     print("")
     spinner = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
@@ -375,17 +371,5 @@ def background_task() -> None:
 
 
 if __name__ == "__main__":
-    # parse_replay(
-    #     r"C:\Users\Leevi\projects\Python\MeleeEloTierList\test_replays\Game_20241019T013605.slp",
-    #     player_ports,
-    #     True,
-    # )
-
-    # parse_replay(
-    #     r"C:\Users\Leevi\projects\Python\MeleeEloTierList\test_replays\Game_20241208T180113.slp",
-    #     player_ports,
-    #     True,
-    # )
-
     socketio.start_background_task(target=background_task)
     socketio.run(app, debug=True, use_reloader=False)

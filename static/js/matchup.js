@@ -33,6 +33,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     document.getElementById("toggle-filter-button").checked = _filterEnabled;
     document.getElementById("toggle-trendline-button").checked = _showTrendline;
+    document.getElementById("toggle-difference-button").checked = _abosluteDifferenceMode;
+    document.getElementById("toggle-sort-button").checked = _sortCharacters;
 });
 
 window.addEventListener("resize", updateFontSize);
@@ -41,6 +43,8 @@ let _characterMask = new Array(26).fill(true);
 let _matchThreshold = 0;
 let _showTrendline = false;
 let _filterEnabled = false;
+let _abosluteDifferenceMode = false;
+let _sortCharacters = false;
 
 loadLocalStorage();
 
@@ -55,6 +59,12 @@ function loadLocalStorage() {
 
     _showTrendline = JSON.parse(localStorage.getItem("showTrendline")) || false;
     localStorage.setItem("showTrendline", JSON.stringify(_showTrendline));
+
+    _abosluteDifferenceMode = JSON.parse(localStorage.getItem("abosluteDifferenceMode")) || false;
+    localStorage.setItem("abosluteDifferenceMode", JSON.stringify(_abosluteDifferenceMode));
+
+    _sortCharacters = JSON.parse(localStorage.getItem("sortCharacters")) || false;
+    localStorage.setItem("sortCharacters", JSON.stringify(_sortCharacters));
 }
 
 let _matchupData;
@@ -91,7 +101,10 @@ function reRender(data, renderMatchupPairs = true) {
         flipMatchupChart(JSON.parse(JSON.stringify(filteredMatchups)))
     );
 
-    const sortedMatchups = reorder(filteredMatchups, rowOrder, colOrder);
+    let sortedMatchups = filteredMatchups;
+    if (_sortCharacters) {
+        sortedMatchups = reorder(filteredMatchups, rowOrder, colOrder);
+    }
     renderMatchupChart(sortedMatchups);
 
     if (renderMatchupPairs) {
@@ -451,7 +464,8 @@ function renderMatchupChart(matchups) {
             const { win_rate, matches } = col.data;
 
             const winRateText = document.createElement("div");
-            winRateText.innerText = Math.round(win_rate * 100) / 100;
+            winRateText.innerText =
+                Math.round((_abosluteDifferenceMode ? win_rate - 0.5 : win_rate) * 100) / 100;
             winRateText.classList.add("win-number");
             cell.appendChild(winRateText);
 
@@ -472,10 +486,13 @@ function renderMatchupChart(matchups) {
             //                   1
             //               );
             // } else {
+            const hue = Math.floor(
+                _abosluteDifferenceMode ? (0.5 - Math.abs(win_rate - 0.5)) * 240 : win_rate * 120
+            );
             cell.style.backgroundColor = isNaN(win_rate)
                 ? "#000000"
                 : hsv2rgb(
-                      Math.floor(win_rate * 120),
+                      hue,
                       matches < _matchThreshold ? 0.4 : 0.6,
                       matches < _matchThreshold ? 0.3 : 1
                   );
@@ -636,4 +653,16 @@ function handleSliderChange(value) {
 function toggleSidebar() {
     const sidebar = document.getElementById("sidebar");
     sidebar.classList.toggle("show");
+}
+
+function toggleDifference(checked) {
+    _abosluteDifferenceMode = checked;
+    localStorage.setItem("abosluteDifferenceMode", JSON.stringify(_abosluteDifferenceMode));
+    reRender(_matchupData, false);
+}
+
+function toggleSort(checked) {
+    _sortCharacters = checked;
+    localStorage.setItem("sortCharacters", JSON.stringify(_sortCharacters));
+    reRender(_matchupData, false);
 }
