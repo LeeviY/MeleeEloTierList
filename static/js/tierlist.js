@@ -76,6 +76,7 @@ function eloToTiers(characters) {
             rating: rating,
             matches: character["matches"],
             volatility: character["volatility"],
+            rd: character["rd"],
         });
     }
     return tierList;
@@ -107,16 +108,22 @@ function renderPlayerTierList(playerId, ratings) {
             img.dataset.name = item.name;
             img.classList.add(playerId.toLowerCase());
             img.onmouseover = () => highlightImages(playerId, item.id);
-
             itemDiv.appendChild(img);
+
             const ratingText = document.createElement("p");
             ratingText.classList.add("item-rating");
             ratingText.textContent = `${Math.round(item.rating)}(${item.matches})`;
             itemDiv.appendChild(ratingText);
 
+            const rdText = document.createElement("p");
+            rdText.classList.add("item-rating");
+            console.log(item);
+            rdText.textContent = `RD: ${Math.round(item.rd)}`;
+            itemDiv.appendChild(rdText);
+
             const volatilityText = document.createElement("p");
             volatilityText.classList.add("item-rating");
-            volatilityText.textContent = `${Math.round(item.volatility * 10000) / 10000}`;
+            volatilityText.textContent = `σ: ${Math.round(item.volatility * 10000) / 10000}`;
             itemDiv.appendChild(volatilityText);
 
             tierItemsContainer.appendChild(itemDiv);
