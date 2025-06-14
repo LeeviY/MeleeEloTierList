@@ -199,20 +199,6 @@ def update_tiers(
 
             new_ratings[player][i] = new_rating
 
-    # last_results.append(
-    #     {
-    #         "P1": {
-    #             "character": str(p1["character"]),
-    #             "delta": mu1_new - mu1_old,
-    #         },
-    #         "P2": {
-    #             "character": str(p2["character"]),
-    #             "delta": mu2_new - mu2_old,
-    #         },
-    #     }
-    # )
-    # last_results = last_results[1:]
-
     return new_ratings
 
 
@@ -250,13 +236,34 @@ def update_matchups(
 
 
 def process_new_replay(path: str):
-    global games_df
+    global games_df, last_results, character_ratings
     data = parse_replay(path, player_ports, True)
     date = pd.to_datetime(data["datetime"])
     if date not in games_df.index:
         games_df.loc[date] = data
-        games_df.to_pickle("db.pkl")
-    reload_tier_list()
+        # games_df.to_pickle("db.pkl")
+
+    p1_old_rating = character_ratings["P1"][data["p1_character"]]["rating"]
+    p2_old_rating = character_ratings["P2"][data["p2_character"]]["rating"]
+
+    reload_tier_list(games_df)
+
+    p1_new_rating = character_ratings["P1"][data["p1_character"]]["rating"]
+    p2_new_rating = character_ratings["P2"][data["p2_character"]]["rating"]
+
+    last_results.append(
+        {
+            "P1": {
+                "character": data["p1_character"],
+                "delta": p1_new_rating - p1_old_rating,
+            },
+            "P2": {
+                "character": data["p2_character"],
+                "delta": p2_new_rating - p2_old_rating,
+            },
+        }
+    )
+    last_results = last_results[1:]
 
 
 def filter_relevant_games(games: pd.DataFrame) -> List[dict]:

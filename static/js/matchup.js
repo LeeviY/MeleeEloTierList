@@ -96,15 +96,24 @@ function reRender(data, renderMatchupPairs = true) {
         : namedMatchups;
     _characterCount = filteredMatchups.length;
 
-    const rowOrder = calculateSortedIndices(filteredMatchups);
-    const colOrder = calculateSortedIndices(
-        flipMatchupChart(JSON.parse(JSON.stringify(filteredMatchups)))
-    );
-
-    let sortedMatchups = filteredMatchups;
+    let rowOrder;
+    let colOrder;
     if (_sortCharacters) {
-        sortedMatchups = reorder(filteredMatchups, rowOrder, colOrder);
+        rowOrder = calculateSortedIndices(filteredMatchups);
+        colOrder = calculateSortedIndices(
+            flipMatchupChart(JSON.parse(JSON.stringify(filteredMatchups)))
+        );
+    } else {
+        const tierlistOrder = [
+            2, 9, 15, 20, 19, 0, 12, 14, 13, 17, 16, 7, 22, 25, 8, 1, 21, 6, 3, 10, 23, 24, 11, 18,
+            4, 5,
+        ];
+        rowOrder = tierlistOrder;
+        colOrder = tierlistOrder;
     }
+
+    const sortedMatchups = reorder(filteredMatchups, rowOrder, colOrder);
+    // const sortedMatchups = filteredMatchups;
     renderMatchupChart(sortedMatchups);
 
     if (renderMatchupPairs) {

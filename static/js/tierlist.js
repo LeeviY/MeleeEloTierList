@@ -117,7 +117,6 @@ function renderPlayerTierList(playerId, ratings) {
 
             const rdText = document.createElement("p");
             rdText.classList.add("item-rating");
-            console.log(item);
             rdText.textContent = `RD: ${Math.round(item.rd)}`;
             itemDiv.appendChild(rdText);
 
@@ -185,6 +184,9 @@ function renderLastResults(results) {
     resultsContainer.innerHTML = "";
 
     results.forEach((result) => {
+        if (!result) {
+            return;
+        }
         const resultDiv = document.createElement("div");
         resultDiv.classList.add("result");
         for (const [player, items] of Object.entries(result)) {
@@ -192,7 +194,7 @@ function renderLastResults(results) {
             itemDiv.classList.add("item");
             itemDiv.style.float = player == "P1" ? "left" : "right";
             const img = document.createElement("img");
-            img.src = `/static/images/${items.character}.png`;
+            img.src = `/static/images/${CHARACTERS[items.character]}.png`;
             itemDiv.appendChild(img);
             const ratingText = document.createElement("p");
             ratingText.classList.add("item-rating");
