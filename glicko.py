@@ -107,3 +107,17 @@ def glicko2_rating_update(player_rating, game_results):
         "rd": SCALE * phi_prime,
         "volatility": sigma_prime,
     }
+
+
+if __name__ == "__main__":
+    # test should result in {'rating': 1464.06, 'rd': 151.52, 'volatility': 0.05999}
+    player_rating = {"rating": 1500, "rd": 200, "volatility": 0.06}
+
+    game_results = [
+        {"opponent_rating": 1400, "opponent_rd": 30, "score": 1},
+        {"opponent_rating": 1550, "opponent_rd": 100, "score": 0},
+        {"opponent_rating": 1700, "opponent_rd": 300, "score": 0},
+    ]
+
+    updated_rating = glicko2_rating_update(player_rating, game_results)
+    print(updated_rating)
