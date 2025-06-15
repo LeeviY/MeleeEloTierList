@@ -268,6 +268,9 @@ def process_new_replay(path: str):
 
     reload_tier_list(games_df)
 
+    p1_character_rating = character_ratings.get("P1")[p1_character]
+    p2_character_rating = character_ratings.get("P2")[p2_character]
+
     p1_new_rating = p1_character_rating.get("rating", 0)
     p2_new_rating = p2_character_rating.get("rating", 0)
 
