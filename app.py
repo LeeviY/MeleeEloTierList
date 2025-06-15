@@ -254,7 +254,7 @@ def process_new_replay(path: str):
     date = pd.to_datetime(data["datetime"])
     if date not in games_df.index:
         games_df.loc[date] = data
-        # games_df.to_pickle("db.pkl")
+        games_df.to_pickle("db.pkl")
 
     p1_character_rating = character_ratings["P1"][data["p1_character"]]
     p2_character_rating = character_ratings["P2"][data["p2_character"]]
