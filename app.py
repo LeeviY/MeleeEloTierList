@@ -43,14 +43,9 @@ print(games_df.dtypes)
 player_ports = settings.DEFAULT_PLAYER_PORTS
 date_range = {"start": datetime(1, 1, 1, 0, 0, 0), "end": datetime.now()}
 
-last_results = [None] * 10
-
-character_ratings = {}
-
-ignored_games = set()
-
-matchup_chart = []
-
+last_results: List[Dict[str, Dict[str, Union[int, float]]]] = [{}] * 10
+character_ratings: Dict[str, List[Dict[str, Union[float, int]]]] = {}
+matchup_chart: List[List[Dict[str, Union[str, int, float]]]] = []
 
 ### TODO:
 # add stock count based tier list
@@ -98,7 +93,7 @@ def reset_tier_list():
 @app.route("/recalculate", methods=["POST"])
 def recalculate_tier_list():
     global character_ratings
-    reload_tier_list()
+    reload_tier_list(games_df)
 
     socketio.emit("results_update", last_results)
     with app.app_context():
@@ -115,6 +110,8 @@ def get_port():
 def set_port():
     global player_ports
     data = request.json
+    if not data:
+        return jsonify({"error": "No data provided"}), 400
     player = data.get("player")
     port = data.get("port")
 
@@ -132,6 +129,8 @@ def set_port():
 @app.route("/allow_exit", methods=["POST"])
 def set_qutting():
     data = request.json
+    if not data:
+        return jsonify({"error": "No data provided"}), 400
     settings.ALLOW_EXIT = data.get("value")
     return jsonify({"message": f"Allowing exit set to {settings.ALLOW_EXIT}"})
 
@@ -146,6 +145,8 @@ def get_date_range():
 def set_date_range():
     global date_range
     data = request.json
+    if not data:
+        return jsonify({"error": "No data provided"}), 400
     start = data.get("start")
     end = data.get("end")
 
@@ -203,7 +204,7 @@ def update_tiers(
 
     for player, characters_results in games_per_character.items():
         for i, character_results in enumerate(characters_results):
-            new_rating = glicko.glicko2_rating_update(
+            new_rating = glicko.rating_update(
                 previous_ratings[player][i], character_results
             )
             new_rating["matches"] = new_ratings[player][i]["matches"] + len(
@@ -256,32 +257,38 @@ def process_new_replay(path: str):
         games_df.loc[date] = data
         games_df.to_pickle("db.pkl")
 
-    p1_character_rating = character_ratings["P1"][data["p1_character"]]
-    p2_character_rating = character_ratings["P2"][data["p2_character"]]
+    p1_character = data.get("p1_character", -1)
+    p2_character = data.get("p2_character", -1)
 
-    p1_old_rating = p1_character_rating["rating"]
-    p2_old_rating = p2_character_rating["rating"]
+    p1_character_rating = character_ratings.get("P1")[p1_character]
+    p2_character_rating = character_ratings.get("P2")[p2_character]
+
+    p1_old_rating = p1_character_rating.get("rating", 0)
+    p2_old_rating = p2_character_rating.get("rating", 0)
 
     reload_tier_list(games_df)
+
+    p1_new_rating = p1_character_rating.get("rating", 0)
+    p2_new_rating = p2_character_rating.get("rating", 0)
 
     last_results.append(
         {
             "P1": {
-                "character": data["p1_character"],
-                "delta": p1_character_rating["rating"] - p1_old_rating,
+                "character": p1_character,
+                "delta": p1_new_rating - p1_old_rating,
                 "probability": glicko.win_probability(
-                    p1_character_rating["rating"],
-                    p2_character_rating["rating"],
-                    p2_character_rating["rd"],
+                    p1_new_rating,
+                    p2_new_rating,
+                    p2_character_rating.get("rd", 0),
                 ),
             },
             "P2": {
-                "character": data["p2_character"],
-                "delta": p2_character_rating["rating"] - p2_old_rating,
+                "character": p2_character,
+                "delta": p2_new_rating - p2_old_rating,
                 "probability": glicko.win_probability(
-                    p2_character_rating["rating"],
-                    p1_character_rating["rating"],
-                    p1_character_rating["rd"],
+                    p2_new_rating,
+                    p1_new_rating,
+                    p1_character_rating.get("rd", 0),
                 ),
             },
         }
@@ -289,7 +296,7 @@ def process_new_replay(path: str):
     last_results = last_results[1:]
 
 
-def filter_relevant_games(games: pd.DataFrame) -> List[dict]:
+def filter_relevant_games(games: pd.DataFrame) -> pd.DataFrame:
     global player_ports, games_list
 
     filtered = games[
@@ -349,7 +356,11 @@ def reload_tier_list(df: pd.DataFrame):
                 if key in matchup_pairs_df.groups
                 else pd.DataFrame()
             )
-            update_matchups(matchup_pair, p1_character, p2_character)
+            update_matchups(
+                matchup_pair,
+                id.CSSCharacter(p1_character),
+                id.CSSCharacter(p2_character),
+            )
     print(f"Matchup recalculation done: {round(time() - start, 2)}s")
 
     # Recalculate tiers.

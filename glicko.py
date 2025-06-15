@@ -1,15 +1,16 @@
 import numpy as np
+from typing import Dict, Union, List
 
-TAU = 0.5
+TAU = 1
 MU = 1500.0
 SCALE = 173.7178
 
 
-def g(phi):
+def g(phi: float) -> float:
     return 1 / np.sqrt(1 + 3 * (phi**2) / (np.pi**2))
 
 
-def E(mu, mu_j, phi_j):
+def E(mu: float, mu_j: float, phi_j: float) -> float:
     return 1 / (1 + np.exp(-g(phi_j) * (mu - mu_j)))
 
 
@@ -21,7 +22,7 @@ def compute_variance(mu, opponents):
     return 1 / v_inv
 
 
-def compute_delta(mu, phi, v, opponents):
+def compute_delta(mu, v, opponents):
     delta_sum = 0
     for mu_j, phi_j, s_j in opponents:
         E_j = E(mu, mu_j, phi_j)
@@ -73,7 +74,9 @@ def f(x, delta, phi, v, a):
     return num / den - (x - a) / (TAU**2)
 
 
-def glicko2_rating_update(player_rating, game_results):
+def rating_update(
+    player_rating: Dict[str, float], game_results: List[Dict[str, Union[float, int]]]
+) -> Dict[str, float]:
     mu = (player_rating["rating"] - MU) / SCALE
     phi = player_rating["rd"] / SCALE
     sigma = player_rating["volatility"]
@@ -90,7 +93,7 @@ def glicko2_rating_update(player_rating, game_results):
         opponents.append((opp_mu, opp_phi, s))
 
     v = compute_variance(mu, opponents)
-    delta = compute_delta(mu, phi, v, opponents)
+    delta = compute_delta(mu, v, opponents)
     sigma_prime = update_volatility(phi, delta, v, sigma)
     phi_star = np.sqrt(phi**2 + sigma_prime**2)
     phi_prime = 1 / np.sqrt(1 / (phi_star**2) + 1 / v)
@@ -109,7 +112,7 @@ def glicko2_rating_update(player_rating, game_results):
     }
 
 
-def win_probability(rating_A, rating_B, RD_B):
+def win_probability(rating_A: float, rating_B: float, RD_B: float) -> float:
     mu_A = (rating_A - MU) / SCALE
     mu_B = (rating_B - MU) / SCALE
     phi_B = RD_B / SCALE
@@ -123,15 +126,15 @@ def win_probability(rating_A, rating_B, RD_B):
 
 if __name__ == "__main__":
     # test should result in {'rating': 1464.06, 'rd': 151.52, 'volatility': 0.05999}
-    player_rating = {"rating": 1500, "rd": 200, "volatility": 0.06}
+    player_rating = {"rating": 1500.0, "rd": 200.0, "volatility": 0.06}
 
     game_results = [
-        {"opponent_rating": 1400, "opponent_rd": 30, "score": 1},
-        {"opponent_rating": 1550, "opponent_rd": 100, "score": 0},
-        {"opponent_rating": 1700, "opponent_rd": 300, "score": 0},
+        {"opponent_rating": 1400.0, "opponent_rd": 30.0, "score": 1},
+        {"opponent_rating": 1550.0, "opponent_rd": 100.0, "score": 0},
+        {"opponent_rating": 1700.0, "opponent_rd": 300.0, "score": 0},
     ]
 
     print(win_probability(1122, 1976, 111))
 
-    updated_rating = glicko2_rating_update(player_rating, game_results)
+    updated_rating = rating_update(player_rating, game_results)
     print(updated_rating)

@@ -106,8 +106,8 @@ def detect_new_files(games_df: pd.DataFrame, directory: str) -> str:
 
 
 def parse_replay(
-    file_path: str, ports: Dict[str, int] = None, debug_print: bool = False
-) -> Dict[int, Dict[str, Union[id.CSSCharacter, bool]]]:
+    file_path: str, ports: Dict[str, int] = {}, debug_print: bool = False
+) -> Dict[str, Union[int, str, bool]]:
     try:
         game = read_slippi(file_path, skip_frames=False)
         if debug_print:

@@ -1,4 +1,5 @@
 import pandas as pd
+from typing import Dict, Union
 
 columns = [
     "stage",
@@ -40,7 +41,7 @@ types = {
     # "datetime": "datetime64[ns]",
 }
 
-empty = {
+empty: Dict[str, Union[int, str, bool]] = {
     "stage": -1,
     "p1_code": "",
     "p1_port": -1,
