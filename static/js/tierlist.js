@@ -226,7 +226,8 @@ function renderLastResults(results) {
 
             const probabilityText = document.createElement("p");
             probabilityText.classList.add("item-rating");
-            probabilityText.textContent = `${Math.round(items.probability)}`;
+            probabilityText.textContent = `${Math.round(items.probability * 100) / 100}`;
+            itemDiv.appendChild(probabilityText);
 
             resultDiv.appendChild(itemDiv);
         }
