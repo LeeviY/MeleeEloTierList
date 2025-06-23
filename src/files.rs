@@ -1,0 +1,416 @@
+use crate::settings;
+
+use chrono::{DateTime, Utc};
+use chrono::{NaiveDate, NaiveDateTime};
+use peppi::game::Game;
+use peppi::io::slippi::read;
+use regex::Regex;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
+use std::{fs, io};
+
+#[derive(Debug)]
+pub enum CSSCharacter {
+    CaptainFalcon,
+    DonkeyKong,
+    Fox,
+    GameAndWatch,
+    Kirby,
+    Bowser,
+    Link,
+    Luigi,
+    Mario,
+    Marth,
+    Mewtwo,
+    Ness,
+    Peach,
+    Pikachu,
+    IceClimbers,
+    Jigglypuff,
+    Samus,
+    Yoshi,
+    Zelda,
+    Sheik,
+    Falco,
+    YoungLink,
+    DrMario,
+    Roy,
+    Pichu,
+    Ganondorf,
+}
+
+impl CSSCharacter {
+    pub fn from_in_game_character(value: InGameCharacter) -> Self {
+        match value {
+            InGameCharacter::CaptainFalcon => CSSCharacter::CaptainFalcon,
+            InGameCharacter::DonkeyKong => CSSCharacter::DonkeyKong,
+            InGameCharacter::Fox => CSSCharacter::Fox,
+            InGameCharacter::GameAndWatch => CSSCharacter::GameAndWatch,
+            InGameCharacter::Kirby => CSSCharacter::Kirby,
+            InGameCharacter::Bowser => CSSCharacter::Bowser,
+            InGameCharacter::Link => CSSCharacter::Link,
+            InGameCharacter::Luigi => CSSCharacter::Luigi,
+            InGameCharacter::Mario => CSSCharacter::Mario,
+            InGameCharacter::Marth => CSSCharacter::Marth,
+            InGameCharacter::Mewtwo => CSSCharacter::Mewtwo,
+            InGameCharacter::Ness => CSSCharacter::Ness,
+            InGameCharacter::Peach => CSSCharacter::Peach,
+            InGameCharacter::Pikachu => CSSCharacter::Pikachu,
+            InGameCharacter::Popo | InGameCharacter::Nana => CSSCharacter::IceClimbers,
+            InGameCharacter::Jigglypuff => CSSCharacter::Jigglypuff,
+            InGameCharacter::Samus => CSSCharacter::Samus,
+            InGameCharacter::Yoshi => CSSCharacter::Yoshi,
+            InGameCharacter::Zelda => CSSCharacter::Zelda,
+            InGameCharacter::Sheik => CSSCharacter::Sheik,
+            InGameCharacter::Falco => CSSCharacter::Falco,
+            InGameCharacter::YoungLink => CSSCharacter::YoungLink,
+            InGameCharacter::DrMario => CSSCharacter::DrMario,
+            InGameCharacter::Roy => CSSCharacter::Roy,
+            InGameCharacter::Pichu => CSSCharacter::Pichu,
+            InGameCharacter::Ganondorf => CSSCharacter::Ganondorf,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum InGameCharacter {
+    Mario,
+    Fox,
+    CaptainFalcon,
+    DonkeyKong,
+    Kirby,
+    Bowser,
+    Link,
+    Sheik,
+    Ness,
+    Peach,
+    Popo,
+    Nana,
+    Pikachu,
+    Samus,
+    Yoshi,
+    Jigglypuff,
+    Mewtwo,
+    Luigi,
+    Marth,
+    Zelda,
+    YoungLink,
+    DrMario,
+    Falco,
+    Pichu,
+    GameAndWatch,
+    Ganondorf,
+    Roy,
+}
+
+impl InGameCharacter {
+    pub fn from_i32(value: i32) -> Option<Self> {
+        match value {
+            0 => Some(InGameCharacter::Mario),
+            1 => Some(InGameCharacter::Fox),
+            2 => Some(InGameCharacter::CaptainFalcon),
+            3 => Some(InGameCharacter::DonkeyKong),
+            4 => Some(InGameCharacter::Kirby),
+            5 => Some(InGameCharacter::Bowser),
+            6 => Some(InGameCharacter::Link),
+            7 => Some(InGameCharacter::Sheik),
+            8 => Some(InGameCharacter::Ness),
+            9 => Some(InGameCharacter::Peach),
+            10 => Some(InGameCharacter::Popo),
+            11 => Some(InGameCharacter::Nana),
+            12 => Some(InGameCharacter::Pikachu),
+            13 => Some(InGameCharacter::Samus),
+            14 => Some(InGameCharacter::Yoshi),
+            15 => Some(InGameCharacter::Jigglypuff),
+            16 => Some(InGameCharacter::Mewtwo),
+            17 => Some(InGameCharacter::Luigi),
+            18 => Some(InGameCharacter::Marth),
+            19 => Some(InGameCharacter::Zelda),
+            20 => Some(InGameCharacter::YoungLink),
+            21 => Some(InGameCharacter::DrMario),
+            22 => Some(InGameCharacter::Falco),
+            23 => Some(InGameCharacter::Pichu),
+            24 => Some(InGameCharacter::GameAndWatch),
+            25 => Some(InGameCharacter::Ganondorf),
+            26 => Some(InGameCharacter::Roy),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct Match {
+    hash: String,
+    datetime: DateTime<Utc>,
+    frames: usize,
+    stage: u16,
+    players: Vec<PlayerInfo>,
+    is_online: bool,
+    end_type: peppi::game::EndMethod,
+    lras_initiator: Option<Option<peppi::game::Port>>,
+    ignore: bool,
+}
+
+impl Default for Match {
+    fn default() -> Self {
+        Match {
+            hash: String::new(),
+            datetime: Utc::now(),
+            frames: 0,
+            stage: 0,
+            players: Vec::new(),
+            is_online: false,
+            end_type: peppi::game::EndMethod::Unresolved,
+            lras_initiator: None,
+            ignore: true,
+        }
+    }
+}
+
+#[derive(Debug)]
+struct PlayerInfo {
+    code: String,
+    port: peppi::game::Port,
+    character: CSSCharacter,
+    stocks: u8,
+    won: bool,
+}
+
+pub fn read_replay(file_path: &str) -> Result<peppi::game::immutable::Game, String> {
+    let file = fs::File::open(file_path)
+        .map_err(|e| format!("Failed to open file '{}': {}", file_path, e))?;
+
+    let mut reader = io::BufReader::new(file);
+
+    let game = read(
+        &mut reader,
+        Some(&peppi::io::slippi::de::Opts {
+            skip_frames: false,
+            compute_hash: true,
+            debug: None,
+        }),
+    )
+    .map_err(|e| format!("Failed to parse replay '{}': {}", file_path, e))?;
+
+    Ok(game)
+}
+
+pub fn parse_replay(game: peppi::game::immutable::Game) -> Result<Match, String> {
+    let metadata = game
+        .metadata()
+        .as_ref()
+        .ok_or("Replay metadata is missing")?;
+
+    let hash = game
+        .hash
+        .as_ref()
+        .ok_or("Game hash is missing")?
+        .to_string();
+
+    let datetime = metadata
+        .get("startAt")
+        .and_then(|v| v.as_str())
+        .ok_or("startAt is missing or not a string in replay metadata")?
+        .parse::<DateTime<Utc>>()
+        .map_err(|e| format!("Error parsing startAt time: {}", e))?;
+
+    let is_online = game
+        .start()
+        .r#match
+        .as_ref()
+        .map_or(false, |m| !m.id.is_empty());
+
+    let game_end = game.end().as_ref().ok_or("Match end data is missing")?;
+
+    let r_presses =
+        count_r_presses(&game).map_err(|e| format!("Error counting R presses: {}", e))?;
+
+    let max_index = r_presses
+        .iter()
+        .enumerate()
+        .max_by_key(|&(_, val)| val)
+        .map(|(idx, _)| idx)
+        .ok_or("R press vector is empty")?;
+
+    let players = game
+        .start
+        .players
+        .iter()
+        .enumerate()
+        .map(|(i, player)| -> Result<PlayerInfo, String> {
+            if player.r#type != peppi::game::PlayerType::Human {
+                return Err("Replay has a non-human player".to_string());
+            }
+
+            let netplay_code = if is_online {
+                let code = player
+                    .netplay
+                    .as_ref()
+                    .ok_or("Player netplay info is missing")?
+                    .code
+                    .as_str();
+
+                if !settings::match_player_code(code) {
+                    return Err(format!(
+                        "Player with netplay code '{}' is not recognized",
+                        code
+                    ));
+                }
+                code
+            } else {
+                settings::r_presser(i == max_index)
+            };
+
+            let character = metadata
+                .get("players")
+                .and_then(|p| p.as_object())
+                .and_then(|obj| obj.get(&(player.port as u8).to_string()))
+                .and_then(|p| p.get("characters"))
+                .and_then(|c| c.as_object())
+                .ok_or("Missing or invalid player/character metadata")?
+                .iter()
+                .max_by_key(|&(_, v)| v.as_i64().unwrap_or(0))
+                .ok_or("No characters found")?
+                .0
+                .parse::<i32>()
+                .map_err(|e| format!("Error parsing character: {}", e))?;
+
+            let stocks = game
+                .frame(game.len() - 1)
+                .ports
+                .get(i)
+                .ok_or("Missing port data")?
+                .leader
+                .post
+                .stocks;
+
+            let placement = game_end
+                .players
+                .as_ref()
+                .ok_or("Players data is missing in game end")?
+                .get(i)
+                .ok_or(format!("Missing player data for index {}", i))?
+                .placement;
+
+            Ok(PlayerInfo {
+                code: netplay_code.to_string(),
+                port: player.port,
+                character: CSSCharacter::from_in_game_character(
+                    InGameCharacter::from_i32(character).ok_or("Invalid InGameCharacter value")?,
+                ),
+                stocks,
+                won: placement == 0,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+
+    Ok(Match {
+        hash: hash,
+        stage: game.start().stage,
+        datetime,
+        players,
+        end_type: game_end.method,
+        lras_initiator: game_end.lras_initiator,
+        frames: game.len(),
+        ignore: false,
+        is_online,
+    })
+}
+
+fn count_r_presses(game: &peppi::game::immutable::Game) -> Result<Vec<i32>, String> {
+    if game.len() == 0 {
+        return Err("Game has no frames".to_string());
+    }
+
+    let mut counts = vec![0; 2];
+
+    for frame_idx in 0..game.len() {
+        let frame = game.frame(frame_idx);
+
+        for (port_idx, port_data) in frame.ports.iter().enumerate() {
+            let pressed = (port_data.leader.pre.buttons_physical >> 5) & 1;
+            counts[port_idx] += pressed as i32;
+        }
+    }
+
+    Ok(counts)
+}
+
+pub fn find_slippi_directory() -> Option<PathBuf> {
+    let base_path = Path::new("C:\\Users");
+
+    let user_dirs: Vec<PathBuf> = fs::read_dir(base_path)
+        .unwrap_or_else(|_| panic!("Cannot read directory: {:?}", base_path))
+        .filter_map(|entry| {
+            let path = entry.ok()?.path();
+            if path.is_dir() { Some(path) } else { None }
+        })
+        .collect();
+
+    for user_dir in user_dirs {
+        let slippi_path = user_dir.join("Documents").join("Slippi");
+        if slippi_path.exists() && slippi_path.is_dir() {
+            return Some(slippi_path);
+        }
+    }
+
+    None
+}
+
+pub fn find_replay_directory() -> Option<PathBuf> {
+    let date_pattern = Regex::new(r"^\d{4}-\d{2}$").unwrap();
+    let mut latest_dir = PathBuf::new();
+
+    let slippi_path = find_slippi_directory()?;
+
+    if let Ok(entries) = fs::read_dir(&slippi_path) {
+        for entry in entries.filter_map(|e| e.ok()) {
+            let subdir_osstr = entry.file_name();
+            let subdir_name_lossy = subdir_osstr.to_string_lossy();
+            let subdir_name = subdir_name_lossy.as_ref();
+
+            if date_pattern.is_match(subdir_name) {
+                latest_dir = slippi_path.join(subdir_name.to_owned());
+            }
+        }
+    } else {
+        eprintln!("Failed to read directory: {:?}", slippi_path);
+    }
+
+    if latest_dir.to_str().is_none() {
+        return None;
+    }
+
+    Some(latest_dir)
+}
+
+pub fn detect_new_files(games_set: &HashSet<String>, directory: &PathBuf) -> Option<String> {
+    if let Ok(entries) = fs::read_dir(directory) {
+        for entry in entries.filter_map(|e| e.ok()) {
+            let filename = entry.file_name().to_string_lossy().to_string();
+
+            let file_path = directory
+                .join(filename.to_owned())
+                .to_str()
+                .unwrap_or("")
+                .to_string();
+
+            if !games_set.contains(&file_path) && !file_path.is_empty() {
+                return Some(file_path);
+            }
+        }
+    }
+
+    None
+}
+
+use walkdir::WalkDir;
+
+pub fn find_slp_files(directory: &str) -> Vec<String> {
+    WalkDir::new(directory)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().map_or(false, |ext| ext == "slp"))
+        .map(|e| e.path().to_string_lossy().to_string())
+        .collect()
+}
