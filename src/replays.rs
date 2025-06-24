@@ -1,7 +1,9 @@
 use crate::files;
 use anyhow::{Context, Result, anyhow};
+use rayon::prelude::*;
 use std::collections::HashMap;
 use std::io::{self, Write};
+use std::time::Instant;
 
 pub fn batch_process_replays(replay_dir: &str, matches: &mut HashMap<String, files::Match>) {
     let slp_files = files::find_slp_files(replay_dir);
@@ -19,6 +21,32 @@ pub fn batch_process_replays(replay_dir: &str, matches: &mut HashMap<String, fil
     }
 
     println!("\rProgress: 100% - Complete!");
+}
+
+pub fn batch_process_replays_threaded(
+    replay_dir: &str,
+    matches: &mut HashMap<String, files::Match>,
+) {
+    println!("\nProcessing replays...");
+    let start = Instant::now();
+    let slp_files = files::find_slp_files(replay_dir);
+
+    let thread_results: Vec<HashMap<String, files::Match>> = slp_files
+        .par_chunks(32)
+        .map(|chunk| {
+            let mut local_matches = HashMap::new();
+            for file in chunk {
+                let _ = process_replay(file.to_string(), &mut local_matches);
+            }
+            local_matches
+        })
+        .collect();
+
+    for map in thread_results {
+        matches.extend(map);
+    }
+
+    println!("\rProcessing replays complete in {:?}", start.elapsed());
 }
 
 pub fn process_replay(

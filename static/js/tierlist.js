@@ -4,16 +4,33 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("toggle-rank-distribution-button").checked = _isNormalRanks;
 });
 
-const socket = io.connect("http://127.0.0.1:5000");
-socket.on("tier_update", function (data) {
-    console.log("tier_update", data);
-    updateTierList(data);
-});
+const socket = new WebSocket("ws://127.0.0.1:5000/ws");
+socket.onopen = () => {
+    console.log("WebSocket connected");
+};
 
-socket.on("results_update", function (data) {
-    console.log("results_update", data);
-    renderLastResults(data);
-});
+socket.onclose = () => {
+    console.log("WebSocket disconnected");
+};
+
+socket.onerror = (err) => {
+    console.error("WebSocket error:", err);
+};
+
+socket.onmessage = (event) => {
+    const msg = JSON.parse(event.data);
+
+    switch (msg.event) {
+        case "tier_update":
+            updateTierList(msg.data);
+            break;
+        case "results_update":
+            renderLastResults(msg.data);
+            break;
+        default:
+            console.warn("Unknown event type", msg);
+    }
+};
 
 const CHARACTERS = [
     "CAPTAIN_FALCON",

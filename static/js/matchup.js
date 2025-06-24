@@ -70,13 +70,32 @@ function loadLocalStorage() {
 let _matchupData;
 let _characterCount = 0;
 
-const socket = io.connect("http://127.0.0.1:5000");
-socket.on("matchup_update", (data) => {
-    console.log(data);
-    _matchupData = data;
-    populateDropdown();
-    reRender(data);
-});
+const socket = new WebSocket("ws://127.0.0.1:5000/ws");
+socket.onopen = () => {
+    console.log("WebSocket connected");
+};
+
+socket.onclose = () => {
+    console.log("WebSocket disconnected");
+};
+
+socket.onerror = (err) => {
+    console.error("WebSocket error:", err);
+};
+
+socket.onmessage = (event) => {
+    const msg = JSON.parse(event.data);
+
+    switch (msg.event) {
+        case "matchup_update":
+            _matchupData = msg.data;
+            populateDropdown();
+            reRender(msg.data);
+            break;
+        default:
+            console.warn("Unknown event type", msg);
+    }
+};
 
 let _k = 0;
 let _d = 0;
