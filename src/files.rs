@@ -1,15 +1,17 @@
 use crate::settings;
 
+use anyhow::{Context, Result, anyhow, bail};
+use bincode::{Decode, Encode};
 use chrono::{DateTime, Utc};
-use chrono::{NaiveDate, NaiveDateTime};
 use peppi::game::Game;
 use peppi::io::slippi::read;
 use regex::Regex;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::{fs, io};
+use walkdir::WalkDir;
 
-#[derive(Debug)]
+#[derive(Encode, Decode, Debug, Clone)]
 pub enum CSSCharacter {
     CaptainFalcon,
     DonkeyKong,
@@ -72,7 +74,7 @@ impl CSSCharacter {
     }
 }
 
-#[derive(Debug)]
+#[derive(Encode, Decode, Debug, Clone)]
 pub enum InGameCharacter {
     Mario,
     Fox,
@@ -138,16 +140,16 @@ impl InGameCharacter {
     }
 }
 
-#[derive(Debug)]
+#[derive(Encode, Decode, Debug, Clone)]
 pub struct Match {
     hash: String,
-    datetime: DateTime<Utc>,
+    datetime: i64, // Store as UNIX timestamp
     frames: usize,
     stage: u16,
     players: Vec<PlayerInfo>,
     is_online: bool,
-    end_type: peppi::game::EndMethod,
-    lras_initiator: Option<Option<peppi::game::Port>>,
+    end_type: u8,
+    lras_initiator: Option<u8>,
     ignore: bool,
 }
 
@@ -155,64 +157,61 @@ impl Default for Match {
     fn default() -> Self {
         Match {
             hash: String::new(),
-            datetime: Utc::now(),
+            datetime: Utc::now().timestamp(),
             frames: 0,
             stage: 0,
             players: Vec::new(),
             is_online: false,
-            end_type: peppi::game::EndMethod::Unresolved,
+            end_type: peppi::game::EndMethod::Unresolved as u8,
             lras_initiator: None,
             ignore: true,
         }
     }
 }
 
-#[derive(Debug)]
+#[derive(Encode, Decode, Debug, Clone)]
 struct PlayerInfo {
     code: String,
-    port: peppi::game::Port,
+    port: u8,
     character: CSSCharacter,
     stocks: u8,
     won: bool,
 }
 
-pub fn read_replay(file_path: &str) -> Result<peppi::game::immutable::Game, String> {
+pub fn read_replay(file_path: &str) -> Result<peppi::game::immutable::Game> {
     let file = fs::File::open(file_path)
-        .map_err(|e| format!("Failed to open file '{}': {}", file_path, e))?;
+        .with_context(|| format!("Failed to open file '{}'", file_path))?;
 
-    let mut reader = io::BufReader::new(file);
-
-    let game = read(
-        &mut reader,
+    read(
+        &mut io::BufReader::new(file),
         Some(&peppi::io::slippi::de::Opts {
             skip_frames: false,
             compute_hash: true,
             debug: None,
         }),
     )
-    .map_err(|e| format!("Failed to parse replay '{}': {}", file_path, e))?;
-
-    Ok(game)
+    .with_context(|| format!("Failed to parse '{}'", file_path))
 }
 
-pub fn parse_replay(game: peppi::game::immutable::Game) -> Result<Match, String> {
+pub fn parse_replay(game: peppi::game::immutable::Game) -> Result<Match> {
     let metadata = game
         .metadata()
         .as_ref()
-        .ok_or("Replay metadata is missing")?;
+        .context("Replay metadata is missing")?;
 
     let hash = game
         .hash
         .as_ref()
-        .ok_or("Game hash is missing")?
+        .context("Game hash is missing")?
         .to_string();
 
     let datetime = metadata
         .get("startAt")
         .and_then(|v| v.as_str())
-        .ok_or("startAt is missing or not a string in replay metadata")?
+        .context("startAt is missing or not a string in replay metadata")?
         .parse::<DateTime<Utc>>()
-        .map_err(|e| format!("Error parsing startAt time: {}", e))?;
+        .context("Failed to parse startAt time")?
+        .timestamp();
 
     let is_online = game
         .start()
@@ -220,41 +219,37 @@ pub fn parse_replay(game: peppi::game::immutable::Game) -> Result<Match, String>
         .as_ref()
         .map_or(false, |m| !m.id.is_empty());
 
-    let game_end = game.end().as_ref().ok_or("Match end data is missing")?;
+    let game_end = game.end().as_ref().context("Match end data is missing")?;
 
-    let r_presses =
-        count_r_presses(&game).map_err(|e| format!("Error counting R presses: {}", e))?;
+    let r_presses = count_r_presses(&game).context("Failed to count R presses")?;
 
     let max_index = r_presses
         .iter()
         .enumerate()
         .max_by_key(|&(_, val)| val)
         .map(|(idx, _)| idx)
-        .ok_or("R press vector is empty")?;
+        .context("R press vector is empty")?;
 
     let players = game
         .start
         .players
         .iter()
         .enumerate()
-        .map(|(i, player)| -> Result<PlayerInfo, String> {
+        .map(|(i, player)| -> Result<PlayerInfo> {
             if player.r#type != peppi::game::PlayerType::Human {
-                return Err("Replay has a non-human player".to_string());
+                bail!("Replay has a non-human player");
             }
 
             let netplay_code = if is_online {
                 let code = player
                     .netplay
                     .as_ref()
-                    .ok_or("Player netplay info is missing")?
+                    .context("Player netplay info is missing")?
                     .code
                     .as_str();
 
                 if !settings::match_player_code(code) {
-                    return Err(format!(
-                        "Player with netplay code '{}' is not recognized",
-                        code
-                    ));
+                    bail!("Player with netplay code '{}' is not recognized", code);
                 }
                 code
             } else {
@@ -267,19 +262,19 @@ pub fn parse_replay(game: peppi::game::immutable::Game) -> Result<Match, String>
                 .and_then(|obj| obj.get(&(player.port as u8).to_string()))
                 .and_then(|p| p.get("characters"))
                 .and_then(|c| c.as_object())
-                .ok_or("Missing or invalid player/character metadata")?
+                .context("Missing or invalid player/character metadata")?
                 .iter()
                 .max_by_key(|&(_, v)| v.as_i64().unwrap_or(0))
-                .ok_or("No characters found")?
+                .context("No characters found")?
                 .0
                 .parse::<i32>()
-                .map_err(|e| format!("Error parsing character: {}", e))?;
+                .context("Failed to parse character")?;
 
             let stocks = game
                 .frame(game.len() - 1)
                 .ports
                 .get(i)
-                .ok_or("Missing port data")?
+                .context("Missing port data")?
                 .leader
                 .post
                 .stocks;
@@ -287,39 +282,40 @@ pub fn parse_replay(game: peppi::game::immutable::Game) -> Result<Match, String>
             let placement = game_end
                 .players
                 .as_ref()
-                .ok_or("Players data is missing in game end")?
+                .context("Players data is missing in game end")?
                 .get(i)
-                .ok_or(format!("Missing player data for index {}", i))?
+                .with_context(|| format!("Missing player data for index {}", i))?
                 .placement;
 
             Ok(PlayerInfo {
                 code: netplay_code.to_string(),
-                port: player.port,
+                port: player.port as u8,
                 character: CSSCharacter::from_in_game_character(
-                    InGameCharacter::from_i32(character).ok_or("Invalid InGameCharacter value")?,
+                    InGameCharacter::from_i32(character)
+                        .context("Invalid InGameCharacter value")?,
                 ),
                 stocks,
                 won: placement == 0,
             })
         })
-        .collect::<Result<Vec<_>, String>>()?;
+        .collect::<Result<Vec<_>>>()?;
 
     Ok(Match {
-        hash: hash,
+        hash,
         stage: game.start().stage,
         datetime,
         players,
-        end_type: game_end.method,
-        lras_initiator: game_end.lras_initiator,
+        end_type: game_end.method as u8,
+        lras_initiator: game_end.lras_initiator.flatten().map(|port| port as u8),
         frames: game.len(),
         ignore: false,
         is_online,
     })
 }
 
-fn count_r_presses(game: &peppi::game::immutable::Game) -> Result<Vec<i32>, String> {
+fn count_r_presses(game: &peppi::game::immutable::Game) -> Result<Vec<i32>> {
     if game.len() == 0 {
-        return Err("Game has no frames".to_string());
+        return Err(anyhow!("Game has no frames".to_string()));
     }
 
     let mut counts = vec![0; 2];
@@ -403,8 +399,6 @@ pub fn detect_new_files(games_set: &HashSet<String>, directory: &PathBuf) -> Opt
 
     None
 }
-
-use walkdir::WalkDir;
 
 pub fn find_slp_files(directory: &str) -> Vec<String> {
     WalkDir::new(directory)

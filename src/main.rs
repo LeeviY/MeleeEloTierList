@@ -1,171 +1,173 @@
+mod db;
 mod files;
+mod replays;
 mod settings;
 
 use axum::{
     Router,
-    extract::{Query, State},
-    http::StatusCode,
+    extract::State,
     response::{Html, Json},
-    routing::{get, post},
+    routing::get,
 };
-use chrono::{DateTime, NaiveDate, Utc};
-use peppi::io::slippi::read;
-use serde::{Deserialize, Serialize};
-use std::sync::Arc;
-use std::{
-    collections::{HashMap, HashSet},
-    hash::Hash,
-    sync::MutexGuard,
+use serde_json::json;
+use std::fs;
+use std::io::{self, Write};
+use std::{collections::HashMap, sync::Arc};
+use tokio::{
+    sync::Mutex,
+    time::{Duration, sleep},
 };
-use std::{fs, io};
-use tokio::sync::Mutex;
-use tokio::time::{Duration, sleep};
 use tower_http::services::ServeDir;
-use uuid::Uuid;
 
-use crate::files::{find_slippi_directory, parse_replay};
-
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AppState {
-    matches: Arc<tokio::sync::Mutex<HashMap<String, files::Match>>>,
+    pub matches: Arc<Mutex<HashMap<String, files::Match>>>,
 }
 
 impl AppState {
-    pub fn new() -> Self {
-        AppState {
-            matches: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
-        }
+    pub fn new(matches: Arc<Mutex<HashMap<String, files::Match>>>) -> Self {
+        AppState { matches }
     }
 }
 
-fn batch_process_replays(
-    replay_dir: &str,
-    matches: &mut HashMap<String, files::Match>,
-) -> Result<(), String> {
-    let slp_files = files::find_slp_files(replay_dir);
+// Route Handlers
+async fn index() -> Html<String> {
+    let html = fs::read_to_string("templates/index.html")
+        .unwrap_or_else(|_| "<html><body>File not found</body></html>".to_string());
 
-    let total = slp_files.len().max(1);
-    let step = (total / 100).max(1);
-
-    for (i, file) in slp_files.iter().enumerate() {
-        process_replay(file.to_string(), matches);
-
-        if i % step == 0 {
-            let percent = (i * 100) / total;
-            println!("Progress: {}%", percent);
-            println!("{:#?}", matches);
-        }
-    }
-
-    Ok(())
+    Html(html)
 }
 
-fn process_replay(
-    new_replay_file: String,
-    matches: &mut HashMap<String, files::Match>,
-) -> Result<(), String> {
-    let new_replay = files::read_replay(&new_replay_file)
-        .map_err(|e| format!("Error reading replay '{}': {}", new_replay_file, e))?;
-
-    match files::parse_replay(new_replay) {
-        Ok(r#match) => {
-            matches.insert(new_replay_file, r#match);
-        }
-        Err(err) => {
-            matches.insert(new_replay_file.clone(), files::Match::default());
-            return Err(format!(
-                "Error parsing replay '{}': {}",
-                new_replay_file, err
-            ));
-        }
-    }
-
-    Ok(())
+async fn matchup_chart() -> Html<&'static str> {
+    Html("<html><body>Matchup Chart Placeholder</body></html>")
 }
 
-async fn background_task(app_state: AppState) -> Result<(), String> {
-    println!("Starting background task...");
+async fn stats() -> Html<&'static str> {
+    Html("<html><body>Stats Placeholder</body></html>")
+}
 
+async fn get_matchups(State(state): State<AppState>) -> Json<serde_json::Value> {
+    Json(json!({
+        "matchups": [], // Placeholder
+    }))
+}
+
+async fn get_character_ratings(State(state): State<AppState>) -> Json<serde_json::Value> {
+    Json(json!({
+        "ratings": {}, // Placeholder
+    }))
+}
+
+// Socket simulation placeholder
+fn emit_all(app_state: &AppState) {
+    // Placeholder for emitting tier_update, results_update, and matchup_update
+}
+
+async fn background_task(app_state: AppState) {
     let mut counter = 0;
-    let spinner = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-
     loop {
-        // print!(
-        //     "\rWatching for new replays... {}",
-        //     spinner[counter % spinner.len()]
-        // );
-        // use std::io::{self, Write};
-        // io::stdout().flush().unwrap();
-        // counter += 1;
-        // println!("{:#?}", app_state);
+        print!("\rWatching for new replays{:<3}", ".".repeat(counter % 4));
+        io::stdout().flush().unwrap();
+        counter += 1;
 
-        let latest_directory =
-            files::find_replay_directory().ok_or("Failed to find latest replay directory")?;
+        let Some(latest_directory) = files::find_replay_directory() else {
+            eprintln!("\rFailed to find latest replay directory");
+            return;
+        };
+
         let mut matches = app_state.matches.lock().await;
-
         let seen_replays: std::collections::HashSet<String> = matches.keys().cloned().collect();
 
         if let Some(new_replay_file) = files::detect_new_files(&seen_replays, &latest_directory) {
-            println!("New replay detected: {}", new_replay_file);
-
-            process_replay(new_replay_file.clone(), &mut matches);
+            println!("\rNew replay detected: {}", new_replay_file);
+            replays::process_replay(new_replay_file.clone(), &mut matches)
+                .unwrap_or_else(|e| println!("Error processing replay: {} {}", new_replay_file, e));
         }
-
-        // drop(matches);
 
         sleep(Duration::from_millis(500)).await;
     }
 }
 
+fn tests() {
+    println!(
+        "{:#?}",
+        files::parse_replay(files::read_replay("test_replays/Game_20250619T235953.slp").unwrap())
+            .unwrap()
+    );
+    println!(
+        "{:#?}",
+        files::parse_replay(files::read_replay("test_replays/Game_20250202T203150.slp").unwrap())
+            .unwrap()
+    );
+    println!(
+        "{:#?}",
+        files::parse_replay(files::read_replay("test_replays/Game_20241208T180113.slp").unwrap())
+            .unwrap()
+    );
+
+    println!(
+        "{:#?}",
+        files::parse_replay(files::read_replay("test_replays/Game_20250623T210148.slp").unwrap())
+            .unwrap()
+    );
+
+    println!(
+        "{:#?}",
+        files::parse_replay(
+            files::read_replay("test_replays/Game_20250623T210148_other.slp").unwrap()
+        )
+        .unwrap()
+    );
+
+    println!(
+        "{:#?}",
+        files::find_slp_files(files::find_slippi_directory().unwrap().to_str().unwrap())
+    );
+}
+
 #[tokio::main]
 async fn main() {
-    // parse_replay("test_replays/Game_20241019T013605.slp", true).unwrap();
-    // println!(
-    //     "{:#?}",
-    //     parse_replay(files::read_replay("test_replays/Game_20250619T235953.slp").unwrap()).unwrap()
-    // );
-    // println!(
-    //     "{:#?}",
-    //     parse_replay(files::read_replay("test_replays/Game_20250202T203150.slp").unwrap()).unwrap()
-    // );
-    // println!(
-    //     "{:#?}",
-    //     parse_replay(files::read_replay("test_replays/Game_20241208T180113.slp").unwrap()).unwrap()
-    // );
+    tests();
 
     let replay_directory = files::find_replay_directory().unwrap();
     println!("{:#?}", replay_directory);
 
-    // println!(
-    //     "{:#?}",
-    //     files::find_slp_files(find_slippi_directory().unwrap().to_str().unwrap())
-    // );
+    let state = AppState::new(db::read_from_file("db.bc").await.unwrap_or_else(|err| {
+        eprintln!("Failed to load match database: {err}");
+        Arc::new(Mutex::new(HashMap::new()))
+    }));
 
-    let state = AppState::new();
+    replays::batch_process_replays(
+        files::find_slippi_directory().unwrap().to_str().unwrap(),
+        &mut *(state.matches.lock().await),
+    );
 
-    {
-        let mut matches = state.matches.lock().await;
+    db::write_to_file(&state.matches, "db.bc")
+        .await
+        .unwrap_or_else(|e| println!("Error writing to db: {}", e));
 
-        batch_process_replays(
-            find_slippi_directory().unwrap().to_str().unwrap(),
-            &mut matches,
-        );
-    }
+    tokio::spawn(background_task(state.clone()));
 
-    tokio::spawn(async move {
-        background_task(state).await;
-    });
+    let router = Router::new()
+        .route("/", get(index))
+        .route("/matchup_chart", get(matchup_chart))
+        .route("/stats", get(stats))
+        .route("/matchups", get(get_matchups))
+        .route("/character_ratings", get(get_character_ratings))
+        .nest_service("/static", ServeDir::new("static"))
+        .with_state(state.clone());
 
-    loop {}
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:5000")
+        .await
+        .unwrap();
+    axum::serve(listener, router)
+        .with_graceful_shutdown(shutdown_signal())
+        .await
+        .unwrap();
+}
 
-    // let app = Router::new()
-    //     .nest_service("/static", ServeDir::new("static"))
-    //     .with_state(state);
-
-    // let listener = tokio::net::TcpListener::bind("127.0.0.1:5000")
-    //     .await
-    //     .unwrap();
-
-    // println!("Server running on http://127.0.0.1:5000");
-    // axum::serve(listener, app).await.unwrap();
+async fn shutdown_signal() {
+    tokio::signal::ctrl_c()
+        .await
+        .expect("failed to install Ctrl+C handler");
 }
