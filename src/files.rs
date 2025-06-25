@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use std::{fs, io};
 use walkdir::WalkDir;
 
-#[derive(Encode, Decode, Debug, Clone)]
+#[derive(Encode, Decode, Debug, Clone, Copy)]
 pub enum CSSCharacter {
     CaptainFalcon,
     DonkeyKong,
@@ -39,6 +39,7 @@ pub enum CSSCharacter {
     Roy,
     Pichu,
     Ganondorf,
+    Empty,
 }
 
 impl CSSCharacter {
@@ -143,14 +144,14 @@ impl InGameCharacter {
 #[derive(Encode, Decode, Debug, Clone)]
 pub struct Match {
     hash: String,
-    datetime: i64, // Store as UNIX timestamp
-    frames: usize,
+    pub datetime: i64,
+    pub frames: usize,
     stage: u16,
-    players: Vec<PlayerInfo>,
+    pub players: (PlayerInfo, PlayerInfo),
     is_online: bool,
-    end_type: u8,
-    lras_initiator: Option<u8>,
-    ignore: bool,
+    pub end_type: u8,
+    pub lras_initiator: Option<u8>,
+    pub ignore: bool,
 }
 
 impl Default for Match {
@@ -160,7 +161,7 @@ impl Default for Match {
             datetime: Utc::now().timestamp(),
             frames: 0,
             stage: 0,
-            players: Vec::new(),
+            players: (PlayerInfo::default(), PlayerInfo::default()),
             is_online: false,
             end_type: peppi::game::EndMethod::Unresolved as u8,
             lras_initiator: None,
@@ -170,12 +171,24 @@ impl Default for Match {
 }
 
 #[derive(Encode, Decode, Debug, Clone)]
-struct PlayerInfo {
+pub struct PlayerInfo {
     code: String,
     port: u8,
-    character: CSSCharacter,
+    pub character: CSSCharacter,
     stocks: u8,
-    won: bool,
+    pub won: bool,
+}
+
+impl Default for PlayerInfo {
+    fn default() -> Self {
+        PlayerInfo {
+            code: String::new(),
+            port: 0,
+            character: CSSCharacter::Empty,
+            stocks: 0,
+            won: false,
+        }
+    }
 }
 
 pub fn read_replay(file_path: &str) -> Result<peppi::game::immutable::Game> {
@@ -217,7 +230,7 @@ pub fn parse_replay(game: peppi::game::immutable::Game) -> Result<Match> {
         .start()
         .r#match
         .as_ref()
-        .map_or(false, |m| !m.id.is_empty());
+        .is_some_and(|m| !m.id.is_empty());
 
     let game_end = game.end().as_ref().context("Match end data is missing")?;
 
@@ -300,11 +313,22 @@ pub fn parse_replay(game: peppi::game::immutable::Game) -> Result<Match> {
         })
         .collect::<Result<Vec<_>>>()?;
 
+    let players_tuple: (PlayerInfo, PlayerInfo) = match &players[..] {
+        [a, b] => {
+            if settings::is_player1(&a.code) {
+                (a.clone(), b.clone())
+            } else {
+                (b.clone(), a.clone())
+            }
+        }
+        _ => bail!("Vector length is not 2"),
+    };
+
     Ok(Match {
         hash,
         stage: game.start().stage,
         datetime,
-        players,
+        players: players_tuple,
         end_type: game_end.method as u8,
         lras_initiator: game_end.lras_initiator.flatten().map(|port| port as u8),
         frames: game.len(),
@@ -373,9 +397,7 @@ pub fn find_replay_directory() -> Option<PathBuf> {
         eprintln!("Failed to read directory: {:?}", slippi_path);
     }
 
-    if latest_dir.to_str().is_none() {
-        return None;
-    }
+    latest_dir.to_str()?;
 
     Some(latest_dir)
 }
@@ -385,11 +407,7 @@ pub fn detect_new_files(games_set: &HashSet<String>, directory: &PathBuf) -> Opt
         for entry in entries.filter_map(|e| e.ok()) {
             let filename = entry.file_name().to_string_lossy().to_string();
 
-            let file_path = directory
-                .join(filename.to_owned())
-                .to_str()
-                .unwrap_or("")
-                .to_string();
+            let file_path = directory.join(&filename).to_str().unwrap_or("").to_string();
 
             if !games_set.contains(&file_path) && !file_path.is_empty() {
                 return Some(file_path);
@@ -404,7 +422,7 @@ pub fn find_slp_files(directory: &str) -> Vec<String> {
     WalkDir::new(directory)
         .into_iter()
         .filter_map(|e| e.ok())
-        .filter(|e| e.path().extension().map_or(false, |ext| ext == "slp"))
+        .filter(|e| e.path().extension().is_some_and(|ext| ext == "slp"))
         .map(|e| e.path().to_string_lossy().to_string())
         .collect()
 }

@@ -85,6 +85,7 @@ socket.onerror = (err) => {
 
 socket.onmessage = (event) => {
     const msg = JSON.parse(event.data);
+    console.log(msg);
 
     switch (msg.event) {
         case "matchup_update":
@@ -150,13 +151,13 @@ function calculateMidPoints(matchups) {
     const points = matchups
         .map((row, y) => {
             const weightedSum = row.reduce((acc, col, x) => {
-                if (isNaN(col.data.win_rate) || col.data.matches < _matchThreshold) return acc;
+                if (col.data.win_rate === null || col.data.matches < _matchThreshold) return acc;
                 const weight = Math.abs(col.data.win_rate - 0.5) * (x / (_characterCount - 1));
                 return acc + weight;
             }, 0);
 
             const totalWeight = row.reduce((acc, col) => {
-                if (isNaN(col.data.win_rate) || col.data.matches < _matchThreshold) return acc;
+                if (col.data.win_rate === null || col.data.matches < _matchThreshold) return acc;
                 return acc + Math.abs(col.data.win_rate - 0.5);
             }, 0);
 
@@ -235,7 +236,7 @@ function searchMinDifference(matchups) {
                 return [
                     x / (_characterCount - 1),
                     (matchups.length - 1 - y) / (_characterCount - 1),
-                    isNaN(col.data.win_rate) || col.data.matches < _matchThreshold
+                    col.data.win_rate === null || col.data.matches < _matchThreshold
                         ? 0
                         : Math.abs(col.data.win_rate - 0.5) * Math.sqrt(col.data.matches),
                 ];
@@ -262,7 +263,7 @@ function calculateSortedIndices(matchups) {
     //     .map((row, i) => {
     //         const { wins, matches } = row.reduce(
     //             (acc, x) => {
-    //                 if (!isNaN(x.data.win_rate)) {
+    //                 if (!(x.data.win_rate === null)) {
     //                     acc.wins += x.data.win_rate * x.data.matches;
     //                     acc.matches += x.data.matches;
     //                 }
@@ -291,8 +292,8 @@ function calculateSortedIndices(matchups) {
                 if (
                     matchesA < matchThreshold ||
                     matchesB < matchThreshold ||
-                    isNaN(winA) ||
-                    isNaN(winB)
+                    winA === null ||
+                    winB === null
                 ) {
                     continue;
                 }
@@ -380,7 +381,7 @@ function renderClosestMatchups(matchups) {
     matchupPairs.sort((a, b) => {
         const p2 = Math.abs(a[2]);
         const p1 = Math.abs(b[2]);
-        return isNaN(p2) - isNaN(p1) || p2 - p1 || b[3] - a[3];
+        return (p2 === null) - (p1 === null) || p2 - p1 || b[3] - a[3];
     });
 
     renderMatchupPairs(
@@ -504,7 +505,7 @@ function renderMatchupChart(matchups) {
 
             // if (_visualizeLine) {
             //     cell.style.backgroundColor =
-            //         isNaN(win_rate) || matches < _matchThreshold
+            //         (win_rate === null) || matches < _matchThreshold
             //             ? "#000000"
             //             : hsv2rgb(
             //                   Math.floor(
@@ -517,13 +518,14 @@ function renderMatchupChart(matchups) {
             const hue = Math.floor(
                 _abosluteDifferenceMode ? (0.5 - Math.abs(win_rate - 0.5)) * 240 : win_rate * 120
             );
-            cell.style.backgroundColor = isNaN(win_rate)
-                ? "#000000"
-                : hsv2rgb(
-                      hue,
-                      matches < _matchThreshold ? 0.4 : 0.6,
-                      matches < _matchThreshold ? 0.3 : 1
-                  );
+            cell.style.backgroundColor =
+                win_rate === null
+                    ? "#000000"
+                    : hsv2rgb(
+                          hue,
+                          matches < _matchThreshold ? 0.4 : 0.6,
+                          matches < _matchThreshold ? 0.3 : 1
+                      );
             // }
 
             rowDiv.appendChild(cell);

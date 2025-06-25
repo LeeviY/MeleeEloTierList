@@ -3,16 +3,23 @@ use anyhow::{Context, Result, anyhow};
 use rayon::prelude::*;
 use std::collections::HashMap;
 use std::io::{self, Write};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
 pub fn batch_process_replays(replay_dir: &str, matches: &mut HashMap<String, files::Match>) {
+    println!("\nProcessing replays...");
+    let start = Instant::now();
     let slp_files = files::find_slp_files(replay_dir);
 
     let total = slp_files.len().max(1);
     let step = (total / 100).max(1);
 
+    let mut skipped = 0;
+
     for (i, file) in slp_files.iter().enumerate() {
-        let _ = process_replay(file.to_string(), matches);
+        if process_replay(file.to_string(), matches).is_err() {
+            skipped += 1;
+        }
 
         if i % step == 0 {
             print!("\rProgress: {}%", (i * 100) / total);
@@ -21,6 +28,12 @@ pub fn batch_process_replays(replay_dir: &str, matches: &mut HashMap<String, fil
     }
 
     println!("\rProgress: 100% - Complete!");
+    println!(
+        "\nProcessed {} (Skipped {:?}) replays in {:?}",
+        slp_files.len(),
+        skipped,
+        start.elapsed()
+    );
 }
 
 pub fn batch_process_replays_threaded(
@@ -31,12 +44,16 @@ pub fn batch_process_replays_threaded(
     let start = Instant::now();
     let slp_files = files::find_slp_files(replay_dir);
 
+    let skipped = AtomicUsize::new(0);
+
     let thread_results: Vec<HashMap<String, files::Match>> = slp_files
         .par_chunks(32)
         .map(|chunk| {
             let mut local_matches = HashMap::new();
             for file in chunk {
-                let _ = process_replay(file.to_string(), &mut local_matches);
+                if process_replay(file.to_string(), &mut local_matches).is_err() {
+                    skipped.fetch_add(1, Ordering::Relaxed);
+                }
             }
             local_matches
         })
@@ -46,7 +63,12 @@ pub fn batch_process_replays_threaded(
         matches.extend(map);
     }
 
-    println!("\rProcessing replays complete in {:?}", start.elapsed());
+    println!(
+        "\nProcessed {} (Skipped {:?}) replays in {:?}",
+        slp_files.len(),
+        skipped,
+        start.elapsed()
+    );
 }
 
 pub fn process_replay(
@@ -61,9 +83,8 @@ pub fn process_replay(
         .with_context(|| format!("Failed to read replay '{}'", new_replay_file))?;
 
     let r#match = files::parse_replay(new_replay)
-        .map_err(|err| {
+        .inspect_err(|_| {
             matches.insert(new_replay_file.clone(), files::Match::default());
-            err
         })
         .with_context(|| format!("Failed to parse replay '{}'", new_replay_file))?;
 
