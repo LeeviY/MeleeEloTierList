@@ -9,9 +9,10 @@ use regex::Regex;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::{fs, io};
+use thiserror::Error;
 use walkdir::WalkDir;
 
-#[derive(Encode, Decode, Debug, Clone, Copy)]
+#[derive(Encode, Decode, Debug, Clone, Copy, serde::Serialize)]
 pub enum CSSCharacter {
     CaptainFalcon,
     DonkeyKong,
@@ -42,8 +43,8 @@ pub enum CSSCharacter {
     Empty,
 }
 
-impl CSSCharacter {
-    pub fn from_in_game_character(value: InGameCharacter) -> Self {
+impl From<InGameCharacter> for CSSCharacter {
+    fn from(value: InGameCharacter) -> Self {
         match value {
             InGameCharacter::CaptainFalcon => CSSCharacter::CaptainFalcon,
             InGameCharacter::DonkeyKong => CSSCharacter::DonkeyKong,
@@ -106,40 +107,51 @@ pub enum InGameCharacter {
     Roy,
 }
 
-impl InGameCharacter {
-    pub fn from_i32(value: i32) -> Option<Self> {
+#[derive(Debug, Error)]
+pub enum InGameCharacterError {
+    #[error("Invalid InGameCharacter value: {0}")]
+    InvalidValue(i32),
+}
+
+impl TryFrom<i32> for InGameCharacter {
+    type Error = InGameCharacterError;
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
         match value {
-            0 => Some(InGameCharacter::Mario),
-            1 => Some(InGameCharacter::Fox),
-            2 => Some(InGameCharacter::CaptainFalcon),
-            3 => Some(InGameCharacter::DonkeyKong),
-            4 => Some(InGameCharacter::Kirby),
-            5 => Some(InGameCharacter::Bowser),
-            6 => Some(InGameCharacter::Link),
-            7 => Some(InGameCharacter::Sheik),
-            8 => Some(InGameCharacter::Ness),
-            9 => Some(InGameCharacter::Peach),
-            10 => Some(InGameCharacter::Popo),
-            11 => Some(InGameCharacter::Nana),
-            12 => Some(InGameCharacter::Pikachu),
-            13 => Some(InGameCharacter::Samus),
-            14 => Some(InGameCharacter::Yoshi),
-            15 => Some(InGameCharacter::Jigglypuff),
-            16 => Some(InGameCharacter::Mewtwo),
-            17 => Some(InGameCharacter::Luigi),
-            18 => Some(InGameCharacter::Marth),
-            19 => Some(InGameCharacter::Zelda),
-            20 => Some(InGameCharacter::YoungLink),
-            21 => Some(InGameCharacter::DrMario),
-            22 => Some(InGameCharacter::Falco),
-            23 => Some(InGameCharacter::Pichu),
-            24 => Some(InGameCharacter::GameAndWatch),
-            25 => Some(InGameCharacter::Ganondorf),
-            26 => Some(InGameCharacter::Roy),
-            _ => None,
+            0 => Ok(InGameCharacter::Mario),
+            1 => Ok(InGameCharacter::Fox),
+            2 => Ok(InGameCharacter::CaptainFalcon),
+            3 => Ok(InGameCharacter::DonkeyKong),
+            4 => Ok(InGameCharacter::Kirby),
+            5 => Ok(InGameCharacter::Bowser),
+            6 => Ok(InGameCharacter::Link),
+            7 => Ok(InGameCharacter::Sheik),
+            8 => Ok(InGameCharacter::Ness),
+            9 => Ok(InGameCharacter::Peach),
+            10 => Ok(InGameCharacter::Popo),
+            11 => Ok(InGameCharacter::Nana),
+            12 => Ok(InGameCharacter::Pikachu),
+            13 => Ok(InGameCharacter::Samus),
+            14 => Ok(InGameCharacter::Yoshi),
+            15 => Ok(InGameCharacter::Jigglypuff),
+            16 => Ok(InGameCharacter::Mewtwo),
+            17 => Ok(InGameCharacter::Luigi),
+            18 => Ok(InGameCharacter::Marth),
+            19 => Ok(InGameCharacter::Zelda),
+            20 => Ok(InGameCharacter::YoungLink),
+            21 => Ok(InGameCharacter::DrMario),
+            22 => Ok(InGameCharacter::Falco),
+            23 => Ok(InGameCharacter::Pichu),
+            24 => Ok(InGameCharacter::GameAndWatch),
+            25 => Ok(InGameCharacter::Ganondorf),
+            26 => Ok(InGameCharacter::Roy),
+            _ => Err(InGameCharacterError::InvalidValue(value)),
         }
     }
 }
+
+// impl InGameCharacter {
+//     pub fn from<i32>(value: i32) -> Option<Self> {}
+// }
 
 #[derive(Encode, Decode, Debug, Clone)]
 pub struct Match {
@@ -303,8 +315,8 @@ pub fn parse_replay(game: peppi::game::immutable::Game) -> Result<Match> {
             Ok(PlayerInfo {
                 code: netplay_code.to_string(),
                 port: player.port as u8,
-                character: CSSCharacter::from_in_game_character(
-                    InGameCharacter::from_i32(character)
+                character: CSSCharacter::from(
+                    InGameCharacter::try_from(character)
                         .context("Invalid InGameCharacter value")?,
                 ),
                 stocks,
@@ -390,7 +402,7 @@ pub fn find_replay_directory() -> Option<PathBuf> {
             let subdir_name = subdir_name_lossy.as_ref();
 
             if date_pattern.is_match(subdir_name) {
-                latest_dir = slippi_path.join(subdir_name.to_owned());
+                latest_dir = slippi_path.join(subdir_name);
             }
         }
     } else {

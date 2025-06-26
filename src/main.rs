@@ -16,11 +16,14 @@ use axum::{
 use chrono::{DateTime, NaiveDate};
 use futures::StreamExt;
 use serde_json::json;
-use std::io::{self, Write};
 use std::{collections::HashMap, sync::Arc};
 use std::{fs, process::exit};
+use std::{
+    io::{self, Write},
+    time::Instant,
+};
 use tokio::{
-    sync::Mutex,
+    sync::{Mutex, RwLock},
     time::{Duration, sleep},
 };
 use tower_http::services::ServeDir;
@@ -73,33 +76,26 @@ impl AppState {
         AppState { matches }
     }
 
-    pub async fn filter(self) -> HashMap<String, files::Match> {
-        self.matches
-            .lock()
-            .await
-            .iter()
-            .filter(|(_, m)| !m.ignore && m.frames / 60 > 30 && m.end_type != 0 && m.end_type != 7)
-            .map(|(k, m)| (k.clone(), m.clone()))
-            .collect()
-    }
-
     pub async fn filter_values(&self) -> Vec<files::Match> {
         self.matches
             .lock()
             .await
-            .iter()
-            .filter(|(_, m)| !m.ignore && m.frames / 60 > 30 && m.end_type != 0 && m.end_type != 7)
-            .map(|(_, m)| (m.clone()))
+            .values()
+            .filter(|m| {
+                !m.ignore && m.frames > settings::MIN_FRAMES && !matches!(m.end_type, 0 | 7)
+            })
+            .cloned()
             .collect()
     }
 
-    pub async fn order_players(&self) -> Vec<files::Match> {
+    pub async fn get_last_match(&self) -> files::Match {
         self.matches
             .lock()
             .await
-            .iter()
-            .map(|(_, m)| (m.clone()))
-            .collect()
+            .values()
+            .max_by_key(|m| m.datetime)
+            .cloned()
+            .expect("matches empty")
     }
 }
 
@@ -125,10 +121,8 @@ async fn stats() -> Html<String> {
     )
 }
 
-async fn get_matchups(State(state): State<AppState>) -> Json<serde_json::Value> {
-    Json(json!({
-        "matchups": [], // Placeholder
-    }))
+async fn get_matchups(State(_state): State<AppState>) -> Json<serde_json::Value> {
+    unimplemented!()
 }
 
 async fn get_character_ratings(State(state): State<AppState>) -> Json<serde_json::Value> {
@@ -279,6 +273,7 @@ async fn get_matchup_update_data(state: &AppState) -> Vec<Vec<Matchup>> {
 async fn handle_socket(mut socket: WebSocket, state: AppState) {
     let character_ratings = get_character_ratings_data(&state).await;
     let matchup_chart = get_matchup_update_data(&state).await;
+    let last_match = state.get_last_match().await;
 
     // println!("{}", character_ratings);
     // let last_results = get_last_results_data(&state).await;
@@ -294,7 +289,18 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
             .to_string(),
         ))
         .await;
-    // let _ = socket.send(Message::Text(last_results)).await;
+    let _ = socket
+        .send(Message::Text(
+            serde_json::json!({
+                "event": "results_update",
+                "data": {
+                    "P1": {"character": last_match.players.0.character, "won":last_match.players.0.won},
+                    "P2": {"character": last_match.players.1.character, "won":last_match.players.1.won},
+                }
+            })
+            .to_string(),
+        ))
+        .await;
     let _ = socket
         .send(Message::Text(
             serde_json::json!({
@@ -315,7 +321,7 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
     }
 }
 
-async fn background_task(app_state: AppState) {
+async fn background_task(state: AppState) {
     let mut counter = 0;
     loop {
         print!("\rWatching for new replays{:<3}", ".".repeat(counter % 4));
@@ -327,7 +333,7 @@ async fn background_task(app_state: AppState) {
             return;
         };
 
-        let mut matches = app_state.matches.lock().await;
+        let mut matches = state.matches.lock().await;
         let seen_replays: std::collections::HashSet<String> = matches.keys().cloned().collect();
 
         if let Some(new_replay_file) = files::detect_new_files(&seen_replays, &latest_directory) {
@@ -335,6 +341,8 @@ async fn background_task(app_state: AppState) {
             replays::process_replay(new_replay_file.clone(), &mut matches)
                 .unwrap_or_else(|e| println!("Error processing replay: {} {}", new_replay_file, e));
         }
+
+        drop(matches);
 
         sleep(Duration::from_millis(500)).await;
     }

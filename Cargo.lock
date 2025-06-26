@@ -17,6 +17,7 @@ dependencies = [
  "serde",
  "serde_json",
  "socketioxide",
+ "thiserror 2.0.12",
  "tokio",
  "tower",
  "tower-http",

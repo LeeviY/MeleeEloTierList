@@ -142,9 +142,8 @@ pub fn win_probability(rating_a: f64, rating_b: f64, rd_b: f64) -> f64 {
 
     let g_phi = 1.0 / (1.0 + 3.0 * phi_b.powi(2) / std::f64::consts::PI.powi(2)).sqrt();
     let exponent = -g_phi * (mu_a - mu_b);
-    let e_a = 1.0 / (1.0 + exponent.exp());
 
-    e_a
+    1.0 / (1.0 + exponent.exp())
 }
 
 #[cfg(test)]
