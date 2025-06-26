@@ -421,7 +421,10 @@ pub fn detect_new_files(games_set: &HashSet<String>, directory: &PathBuf) -> Opt
 
             let file_path = directory.join(&filename).to_str().unwrap_or("").to_string();
 
-            if !games_set.contains(&file_path) && !file_path.is_empty() {
+            if !games_set.contains(&file_path)
+                && !file_path.is_empty()
+                && !is_file_locked(&file_path)
+            {
                 return Some(file_path);
             }
         }
@@ -437,4 +440,8 @@ pub fn find_slp_files(directory: &str) -> Vec<String> {
         .filter(|e| e.path().extension().is_some_and(|ext| ext == "slp"))
         .map(|e| e.path().to_string_lossy().to_string())
         .collect()
+}
+
+fn is_file_locked<P: AsRef<Path>>(file_path: P) -> bool {
+    fs::File::open(file_path).is_err()
 }

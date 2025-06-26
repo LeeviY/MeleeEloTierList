@@ -74,7 +74,7 @@ pub fn batch_process_replays_threaded(
 pub fn process_replay(
     new_replay_file: String,
     matches: &mut HashMap<String, files::Match>,
-) -> Result<()> {
+) -> Result<files::Match> {
     if matches.contains_key(&new_replay_file) {
         return Err(anyhow!("File already exists in db"));
     }
@@ -88,6 +88,5 @@ pub fn process_replay(
         })
         .with_context(|| format!("Failed to parse replay '{}'", new_replay_file))?;
 
-    matches.insert(new_replay_file, r#match);
-    Ok(())
+    Ok(r#match)
 }
