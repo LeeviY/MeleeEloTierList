@@ -1,17 +1,15 @@
-use axum::{
-    Router,
-    extract::{
-        State, WebSocketUpgrade,
-        ws::{Message, WebSocket},
-    },
-    response::{Html, IntoResponse, Json},
-    routing::{get, post},
-};
+use std::fs;
+use std::sync::Arc;
+
+use axum::Router;
+use axum::extract::ws::{Message, WebSocket};
+use axum::extract::{State, WebSocketUpgrade};
+use axum::response::{Html, IntoResponse, Json};
+use axum::routing::{get, post};
 use chrono::NaiveDateTime;
 use futures::{SinkExt, StreamExt};
 use serde::Deserialize;
 use serde_json::json;
-use std::{fs, sync::Arc};
 use tokio::sync::{Mutex, mpsc};
 use tower_http::services::ServeDir;
 use utoipa::{OpenApi, ToSchema};

@@ -5,17 +5,15 @@ mod replays;
 mod routes;
 mod settings;
 
+use std::collections::{HashMap, HashSet};
+use std::io::{self, Write};
+use std::sync::Arc;
+
 use axum::extract::ws::Message;
 use chrono::{DateTime, NaiveDate};
-use std::{
-    collections::HashMap,
-    io::{self, Write},
-    sync::Arc,
-};
-use tokio::{
-    sync::{Mutex, mpsc::UnboundedSender},
-    time::{Duration, sleep},
-};
+use tokio::sync::Mutex;
+use tokio::sync::mpsc::UnboundedSender;
+use tokio::time::{Duration, sleep};
 
 #[derive(Debug, Clone, Default, serde::Serialize)]
 pub struct Matchup {
@@ -269,7 +267,7 @@ async fn background_task(state: Arc<Mutex<AppState>>) {
 
         let mut state_guard = state.lock().await;
         let matches = &mut state_guard.matches;
-        let seen_replays: std::collections::HashSet<String> = matches.keys().cloned().collect();
+        let seen_replays: HashSet<String> = matches.keys().cloned().collect();
 
         if let Some(new_replay_file) = files::detect_new_files(&seen_replays, &latest_directory) {
             println!("\rNew replay detected: {}", new_replay_file);

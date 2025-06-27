@@ -1,12 +1,12 @@
-use crate::files;
+use std::collections::HashMap;
+use std::io::{self, Write};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Instant;
+
 use anyhow::{Context, Result};
 use rayon::prelude::*;
-use std::{
-    collections::HashMap,
-    io::{self, Write},
-    sync::atomic::{AtomicUsize, Ordering},
-    time::Instant,
-};
+
+use crate::files;
 
 #[allow(dead_code)]
 pub fn batch_process_replays(replay_dir: &str, matches: &mut HashMap<String, files::Match>) {
