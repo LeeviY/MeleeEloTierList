@@ -7,13 +7,13 @@ use axum::{
     response::{Html, IntoResponse, Json},
     routing::get,
 };
-use futures::StreamExt;
+use futures::{SinkExt, StreamExt};
 use serde_json::json;
 use std::{fs, sync::Arc};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, mpsc};
 use tower_http::services::ServeDir;
 
-use crate::{AppState, Matchup, files::Match, glicko::Player};
+use crate::{AppState, LastResult, Matchup, files, glicko::Player, settings};
 
 // Route Handlers
 pub async fn index() -> Html<String> {
@@ -42,58 +42,57 @@ pub async fn get_character_ratings(
 ) -> Json<serde_json::Value> {
     let character_ratings = state.lock().await.get_character_ratings_data();
     Json(json!({
-        "ratings": {
-            "P1": character_ratings.0,
-            "P2": character_ratings.1,
-        },
+        "P1": character_ratings.0,
+        "P2": character_ratings.1,
     }))
 }
 //
 
-fn create_tier_update_message(character_ratings: (Vec<Player>, Vec<Player>)) -> String {
+pub fn create_tier_update_message(character_ratings: (Vec<Player>, Vec<Player>)) -> String {
     serde_json::json!({
         "event": "tier_update",
-        "data": {
-            "P1": character_ratings.0,
-            "P2": character_ratings.1
-        }
+        "data": {"P1": character_ratings.0, "P2": character_ratings.1}
     })
     .to_string()
 }
 
-fn create_results_update_message(last_match: Option<Match>) -> String {
+pub fn create_results_update_message(last_results: (LastResult, LastResult)) -> String {
     serde_json::json!({
         "event": "results_update",
-        "data": match last_match {
-            Some(m) => serde_json::json!({
-                "P1": {
-                    "character": m.players.0.character,
-                    "won": m.players.0.won
-                },
-                "P2": {
-                    "character": m.players.1.character,
-                    "won": m.players.1.won
-                }
-            }),
-            None => serde_json::Value::Null,
-        }
+        "data": serde_json::json!({"P1": last_results.0, "P2": last_results.1})
     })
     .to_string()
 }
 
-fn create_matchup_update_message(matchup_chart: Vec<Vec<Matchup>>) -> String {
+pub fn create_matchup_update_message(
+    matchup_chart: Vec<Vec<Matchup>>,
+    last_match: Option<files::Match>,
+) -> String {
+    let winner = if let Some(m) = last_match {
+        if m.players.0.won {
+            settings::P1
+        } else {
+            settings::P2
+        }
+    } else {
+        ""
+    };
+
     serde_json::json!({
         "event": "matchup_update",
         "data": {
             "matchups": matchup_chart,
-            "winner": "P2", // TODO: fixme
+            "winner": winner,
         },
     })
     .to_string()
 }
 
 pub async fn handle_socket(mut socket: WebSocket, state: Arc<Mutex<AppState>>) {
-    let state_guard = state.lock().await;
+    let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
+
+    let mut state_guard = state.lock().await;
+    state_guard.clients.push(tx.clone());
     let character_ratings = state_guard.get_character_ratings_data();
     let matchup_chart = state_guard.get_matchup_update_data();
     let last_match = state_guard.last_match.clone();
@@ -102,18 +101,30 @@ pub async fn handle_socket(mut socket: WebSocket, state: Arc<Mutex<AppState>>) {
     let _ = socket
         .send(Message::Text(create_tier_update_message(character_ratings)))
         .await;
+
     let _ = socket
-        .send(Message::Text(create_results_update_message(last_match)))
-        .await;
-    let _ = socket
-        .send(Message::Text(create_matchup_update_message(matchup_chart)))
+        .send(Message::Text(create_matchup_update_message(
+            matchup_chart,
+            last_match,
+        )))
         .await;
 
-    while let Some(Ok(msg)) = socket.next().await {
+    let (mut sender, mut receiver) = socket.split();
+    let write_task = tokio::spawn(async move {
+        while let Some(msg) = rx.recv().await {
+            if sender.send(msg).await.is_err() {
+                break;
+            }
+        }
+    });
+
+    while let Some(Ok(msg)) = receiver.next().await {
         if matches!(msg, Message::Close(_)) {
             break;
         }
     }
+
+    write_task.abort();
 }
 
 pub async fn websocket_handler(

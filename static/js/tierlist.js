@@ -1,37 +1,3 @@
-document.addEventListener("DOMContentLoaded", () => {
-    fetchPorts();
-
-    document.getElementById("toggle-rank-distribution-button").checked = _isNormalRanks;
-});
-
-const socket = new WebSocket("ws://127.0.0.1:5000/ws");
-socket.onopen = () => {
-    console.log("WebSocket connected");
-};
-
-socket.onclose = () => {
-    console.log("WebSocket disconnected");
-};
-
-socket.onerror = (err) => {
-    console.error("WebSocket error:", err);
-};
-
-socket.onmessage = (event) => {
-    const msg = JSON.parse(event.data);
-
-    switch (msg.event) {
-        case "tier_update":
-            updateTierList(msg.data);
-            break;
-        case "results_update":
-            renderLastResults(msg.data);
-            break;
-        default:
-            console.warn("Unknown event type", msg);
-    }
-};
-
 const CHARACTERS = [
     "CAPTAIN_FALCON",
     "DONKEY_KONG",
@@ -61,16 +27,56 @@ const CHARACTERS = [
     "GANONDORF",
 ];
 
-_isNormalRanks = false;
+document.addEventListener("DOMContentLoaded", () => {
+    // fetchPorts();
+    document.getElementById("toggle-rank-distribution-button").checked = _isNormalRanks;
+    renderLastResults(_lastResults);
+});
+
+let _isNormalRanks = false;
+let _tierList = null;
+let _lastResults = [];
 
 loadLocalStorage();
 
 function loadLocalStorage() {
     _isNormalRanks = JSON.parse(localStorage.getItem("normalRanks")) || false;
     localStorage.setItem("normalRanks", JSON.stringify(_isNormalRanks));
+    _lastResults = JSON.parse(localStorage.getItem("lastResults")) || [];
 }
 
-let _tierList = null;
+const socket = new WebSocket("ws://127.0.0.1:5000/ws");
+socket.onopen = () => {
+    console.log("WebSocket connected");
+};
+
+socket.onclose = () => {
+    console.log("WebSocket disconnected");
+};
+
+socket.onerror = (err) => {
+    console.error("WebSocket error:", err);
+};
+
+socket.onmessage = (event) => {
+    const msg = JSON.parse(event.data);
+    console.log(msg);
+
+    switch (msg.event) {
+        case "tier_update":
+            updateTierList(msg.data);
+            break;
+        case "results_update":
+            _lastResults = [..._lastResults, msg.data].slice(-10);
+            localStorage.setItem("lastResults", JSON.stringify(_lastResults));
+            renderLastResults(_lastResults);
+            break;
+        case "matchup_update":
+            break;
+        default:
+            console.warn("Unknown event type", msg);
+    }
+};
 
 function updateTierList(data) {
     _tierList = data;
@@ -238,12 +244,12 @@ function renderLastResults(results) {
 
             const ratingText = document.createElement("p");
             ratingText.classList.add("item-rating");
-            ratingText.textContent = `${Math.round(items.delta)}`;
+            ratingText.textContent = `${Math.round(items.rating_diff)}`;
             itemDiv.appendChild(ratingText);
 
             const probabilityText = document.createElement("p");
             probabilityText.classList.add("item-rating");
-            probabilityText.textContent = `${Math.round(items.probability * 100) / 100}`;
+            probabilityText.textContent = `${Math.round(items.win_probability * 100) / 100}`;
             itemDiv.appendChild(probabilityText);
 
             resultDiv.appendChild(itemDiv);

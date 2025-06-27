@@ -3,12 +3,15 @@ use crate::settings;
 use anyhow::{Context, Result, anyhow, bail};
 use bincode::{Decode, Encode};
 use chrono::{DateTime, Utc};
-use peppi::game::Game;
-use peppi::io::slippi::read;
+use fs2::FileExt;
+use peppi::{game::Game, io::slippi::read};
 use regex::Regex;
-use std::collections::HashSet;
-use std::path::{Path, PathBuf};
-use std::{fs, io};
+use std::{
+    collections::HashSet,
+    fs::{self, OpenOptions},
+    io,
+    path::{Path, PathBuf},
+};
 use thiserror::Error;
 use walkdir::WalkDir;
 
@@ -442,6 +445,17 @@ pub fn find_slp_files(directory: &str) -> Vec<String> {
         .collect()
 }
 
-fn is_file_locked<P: AsRef<Path>>(file_path: P) -> bool {
-    fs::File::open(file_path).is_err()
+pub fn is_file_locked<P: AsRef<Path>>(file_path: P) -> bool {
+    let file = match OpenOptions::new().read(true).write(true).open(file_path) {
+        Ok(f) => f,
+        Err(_) => return true,
+    };
+
+    match file.try_lock_exclusive() {
+        Ok(_) => {
+            let _ = fs2::FileExt::unlock(&file);
+            false
+        }
+        Err(_) => true,
+    }
 }

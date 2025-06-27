@@ -1,5 +1,5 @@
-const P1: &str = "LY＃863";
-const P2: &str = "KEKW＃849";
+pub const P1: &str = "LY＃863";
+pub const P2: &str = "KEKW＃849";
 
 pub const MIN_FRAMES: usize = 30 * 60; // 30s * 60fps
 

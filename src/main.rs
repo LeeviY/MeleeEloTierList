@@ -5,11 +5,15 @@ mod replays;
 mod routes;
 mod settings;
 
+use axum::extract::ws::Message;
 use chrono::{DateTime, NaiveDate};
-use std::io::{self, Write};
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    io::{self, Write},
+    sync::Arc,
+};
 use tokio::{
-    sync::Mutex,
+    sync::{Mutex, mpsc::UnboundedSender},
     time::{Duration, sleep},
 };
 
@@ -19,18 +23,56 @@ pub struct Matchup {
     matches: i32,
 }
 
+#[derive(Debug, Clone, Default, serde::Serialize)]
+pub struct LastResult {
+    pub character: u8,
+    pub rating_diff: f64,
+    pub rd_diff: f64,
+    pub volatility_diff: f64,
+    pub win_probability: f64,
+}
+
 #[derive(Debug, Clone)]
 pub struct AppState {
     pub matches: HashMap<String, files::Match>,
     pub last_match: Option<files::Match>,
+    pub clients: Vec<UnboundedSender<Message>>,
+    pub ratings: (Vec<glicko::Player>, Vec<glicko::Player>),
 }
 
 impl AppState {
     pub fn new(matches: HashMap<String, files::Match>) -> Self {
-        AppState {
+        Self {
             matches,
             last_match: None,
+            clients: vec![],
+            ratings: (vec![], vec![]),
         }
+    }
+
+    pub fn broadcast_updates(&mut self) {
+        let start = std::time::Instant::now();
+
+        let new_ratings = self.get_character_ratings_data();
+        let last_result = self.get_last_result(&new_ratings);
+        let new_matchups = self.get_matchup_update_data();
+
+        self.ratings = new_ratings.clone();
+
+        println!("{:?}", std::time::Instant::now().duration_since(start));
+
+        let tier_msg = Message::Text(routes::create_tier_update_message(new_ratings));
+        let result_msg = Message::Text(routes::create_results_update_message(last_result));
+        let matchup_msg = Message::Text(routes::create_matchup_update_message(
+            new_matchups,
+            self.last_match.clone(),
+        ));
+
+        self.clients.retain(|client| {
+            client.send(tier_msg.clone()).is_ok()
+                && client.send(result_msg.clone()).is_ok()
+                && client.send(matchup_msg.clone()).is_ok()
+        });
     }
 
     pub fn filter_values(&self) -> Vec<files::Match> {
@@ -170,19 +212,61 @@ impl AppState {
             .cloned()
             .expect("matches empty")
     }
+
+    fn get_last_result(
+        &self,
+        new_ratings: &(Vec<glicko::Player>, Vec<glicko::Player>),
+    ) -> (LastResult, LastResult) {
+        let players = self.last_match.clone().unwrap().players;
+        let p0_character = players.0.character as usize;
+        let p1_character = players.1.character as usize;
+
+        (
+            LastResult {
+                character: p0_character as u8,
+                rating_diff: new_ratings.0[p0_character].rating
+                    - self.ratings.0[p0_character].rating,
+                rd_diff: new_ratings.0[p0_character].rd - self.ratings.0[p0_character].rd,
+                volatility_diff: new_ratings.0[p0_character].volatility
+                    - self.ratings.0[p0_character].volatility,
+                win_probability: glicko::win_probability(
+                    self.ratings.0[p0_character].rating,
+                    self.ratings.1[p1_character].rating,
+                    self.ratings.1[p1_character].rd,
+                ),
+            },
+            LastResult {
+                character: p1_character as u8,
+                rating_diff: new_ratings.1[p1_character].rating
+                    - self.ratings.1[p1_character].rating,
+                rd_diff: new_ratings.1[p1_character].rd - self.ratings.1[p1_character].rd,
+                volatility_diff: new_ratings.1[p1_character].volatility
+                    - self.ratings.1[p1_character].volatility,
+                win_probability: glicko::win_probability(
+                    self.ratings.1[p1_character].rating,
+                    self.ratings.0[p0_character].rating,
+                    self.ratings.0[p0_character].rd,
+                ),
+            },
+        )
+    }
 }
 
 async fn background_task(state: Arc<Mutex<AppState>>) {
     let mut counter = 0;
     loop {
-        print!("\rWatching for new replays{:<3}", ".".repeat(counter % 4));
-        io::stdout().flush().unwrap();
-        counter += 1;
-
         let Some(latest_directory) = files::find_replay_directory() else {
             eprintln!("\rFailed to find latest replay directory");
             return;
         };
+
+        print!(
+            "\rWatching for new replays in {} {:<3}",
+            latest_directory.to_str().unwrap_or("Unknown"),
+            ".".repeat(counter % 4)
+        );
+        io::stdout().flush().unwrap();
+        counter += 1;
 
         let mut state_guard = state.lock().await;
         let matches = &mut state_guard.matches;
@@ -191,12 +275,18 @@ async fn background_task(state: Arc<Mutex<AppState>>) {
         if let Some(new_replay_file) = files::detect_new_files(&seen_replays, &latest_directory) {
             println!("\rNew replay detected: {}", new_replay_file);
             match replays::process_replay(new_replay_file.clone(), matches) {
-                Ok(r#match) => {
-                    matches.insert(new_replay_file, r#match.clone());
-                    state_guard.last_match = Some(r#match);
+                Some(Ok(m)) => {
+                    println!("{:#?}", m);
+                    matches.insert(new_replay_file, m.clone());
+                    state_guard.last_match = Some(m);
+                    state_guard.broadcast_updates();
                 }
-                Err(e) => {
+                Some(Err(e)) => {
+                    matches.insert(new_replay_file.clone(), files::Match::default());
                     println!("Error processing replay: {} {}", new_replay_file, e);
+                }
+                None => {
+                    println!("Skipped replay: {}", new_replay_file);
                 }
             }
         }
@@ -217,9 +307,6 @@ async fn shutdown_signal() {
 async fn main() {
     // tests();
 
-    let replay_directory = files::find_replay_directory().unwrap();
-    println!("{:#?}", replay_directory);
-
     let state = Arc::new(Mutex::new(AppState::new(
         db::read_from_file("db.bc").await.unwrap_or_else(|err| {
             eprintln!("Failed to load match database: {err}");
@@ -229,10 +316,15 @@ async fn main() {
 
     println!("{:?}", state.lock().await.matches.len());
 
-    replays::batch_process_replays(
+    replays::batch_process_replays_threaded(
         files::find_slippi_directory().unwrap().to_str().unwrap(),
         &mut state.lock().await.matches,
     );
+
+    {
+        let mut state_guard = state.lock().await;
+        state_guard.ratings = state_guard.get_character_ratings_data();
+    }
 
     db::write_to_file(&state.lock().await.matches, "db.bc")
         .await

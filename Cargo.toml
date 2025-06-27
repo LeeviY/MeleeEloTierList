@@ -21,3 +21,4 @@ tower = { version = "0.5.2" }
 futures = "0.3.31"
 rayon = "1.10.0"
 thiserror = "2.0.12"
+fs2 = "0.4.3"

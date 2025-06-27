@@ -46,6 +46,9 @@ let _filterEnabled = false;
 let _abosluteDifferenceMode = false;
 let _sortCharacters = false;
 
+let _matchupData;
+let _characterCount = 0;
+
 loadLocalStorage();
 
 function loadLocalStorage() {
@@ -66,9 +69,6 @@ function loadLocalStorage() {
     _sortCharacters = JSON.parse(localStorage.getItem("sortCharacters")) || false;
     localStorage.setItem("sortCharacters", JSON.stringify(_sortCharacters));
 }
-
-let _matchupData;
-let _characterCount = 0;
 
 const socket = new WebSocket("ws://127.0.0.1:5000/ws");
 socket.onopen = () => {
