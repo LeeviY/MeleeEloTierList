@@ -1,8 +1,9 @@
-use crate::files::Match;
-
-use anyhow::Result;
 use std::collections::HashMap;
 use std::fs;
+
+use anyhow::Result;
+
+use crate::files::Match;
 
 pub async fn write_to_file(data: &HashMap<String, Match>, filename: &str) -> Result<()> {
     let encoded = bincode::encode_to_vec(data, bincode::config::standard())?;

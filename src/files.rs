@@ -1,21 +1,21 @@
-use crate::settings;
+use std::collections::HashSet;
+use std::fs::{self, OpenOptions};
+use std::io;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow, bail};
 use bincode::{Decode, Encode};
 use chrono::{DateTime, Utc};
 use fs2::FileExt;
 use num_enum::TryFromPrimitive;
-use peppi::{game::Game, io::slippi::read};
+use peppi::game::Game;
+use peppi::io::slippi;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::HashSet,
-    fs::{self, OpenOptions},
-    io,
-    path::{Path, PathBuf},
-};
 use utoipa::ToSchema;
 use walkdir::WalkDir;
+
+use crate::settings;
 
 #[derive(
     Encode,
@@ -221,7 +221,7 @@ pub fn read_replay(file_path: &str) -> Result<peppi::game::immutable::Game> {
     let file = fs::File::open(file_path)
         .with_context(|| format!("Failed to open file '{}'", file_path))?;
 
-    read(
+    slippi::read(
         &mut io::BufReader::new(file),
         Some(&peppi::io::slippi::de::Opts {
             skip_frames: false,
