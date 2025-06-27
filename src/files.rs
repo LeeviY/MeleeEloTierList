@@ -428,30 +428,25 @@ pub fn find_replay_directory() -> Option<PathBuf> {
     Some(latest_dir)
 }
 
+fn is_slp<P: AsRef<Path>>(path: P) -> bool {
+    path.as_ref().extension().is_some_and(|ext| ext == "slp")
+}
+
 pub fn detect_new_files(games_set: &HashSet<String>, directory: &PathBuf) -> Option<String> {
-    if let Ok(entries) = fs::read_dir(directory) {
-        for entry in entries.filter_map(|e| e.ok()) {
-            let filename = entry.file_name().to_string_lossy().to_string();
-
-            let file_path = directory.join(&filename).to_str().unwrap_or("").to_string();
-
-            if !games_set.contains(&file_path)
-                && !file_path.is_empty()
-                && !is_file_locked(&file_path)
-            {
-                return Some(file_path);
-            }
-        }
-    }
-
-    None
+    fs::read_dir(directory)
+        .ok()?
+        .filter_map(|e| e.ok())
+        .filter(|e| is_slp(e.path()))
+        .map(|e| directory.join(&e.path()).to_string_lossy().to_string())
+        .filter(|path| !games_set.contains(path) && !path.is_empty() && !is_file_locked(&path))
+        .next()
 }
 
 pub fn find_slp_files(directory: &str) -> Vec<String> {
     WalkDir::new(directory)
         .into_iter()
         .filter_map(|e| e.ok())
-        .filter(|e| e.path().extension().is_some_and(|ext| ext == "slp"))
+        .filter(|e| is_slp(e.path()))
         .map(|e| e.path().to_string_lossy().to_string())
         .collect()
 }
