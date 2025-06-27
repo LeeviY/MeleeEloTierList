@@ -1,8 +1,11 @@
+use serde::Serialize;
+use utoipa::ToSchema;
+
 const TAU: f64 = 1.0;
 const MU: f64 = 1500.0;
 const SCALE: f64 = 173.7178;
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct Player {
     pub rating: f64,
     pub rd: f64,

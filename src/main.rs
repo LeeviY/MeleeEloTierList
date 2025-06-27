@@ -61,12 +61,11 @@ impl AppState {
 
         println!("{:?}", std::time::Instant::now().duration_since(start));
 
-        let tier_msg = Message::Text(routes::create_tier_update_message(new_ratings));
-        let result_msg = Message::Text(routes::create_results_update_message(last_result));
-        let matchup_msg = Message::Text(routes::create_matchup_update_message(
-            new_matchups,
-            self.last_match.clone(),
-        ));
+        let tier_msg = Message::Text(routes::create_tier_update_message(new_ratings).into());
+        let result_msg = Message::Text(routes::create_results_update_message(last_result).into());
+        let matchup_msg = Message::Text(
+            routes::create_matchup_update_message(new_matchups, self.last_match.clone()).into(),
+        );
 
         self.clients.retain(|client| {
             client.send(tier_msg.clone()).is_ok()
@@ -75,7 +74,7 @@ impl AppState {
         });
     }
 
-    pub fn filter_values(&self) -> Vec<files::Match> {
+    pub fn get_values_filtered(&self) -> Vec<files::Match> {
         self.matches
             .values()
             .filter(|m| {
@@ -139,7 +138,7 @@ impl AppState {
         let mut character_ratings = (default_ratings.clone(), default_ratings.clone());
 
         let mut grouped: HashMap<String, Vec<files::Match>> = HashMap::new();
-        let matches = self.filter_values();
+        let matches = self.get_values_filtered();
         for m in matches {
             let naive = DateTime::from_timestamp(m.datetime, 0).unwrap();
             let date = naive.format("%Y-%m-%d").to_string();
@@ -177,7 +176,7 @@ impl AppState {
     fn get_matchup_update_data(&self) -> Vec<Vec<Matchup>> {
         let mut matchup_chart = vec![vec![Matchup::default(); 26]; 26];
 
-        let mut matches: Vec<_> = self.filter_values();
+        let mut matches: Vec<_> = self.get_values_filtered();
         matches.sort_by_key(|m| -m.datetime);
 
         for m in matches {

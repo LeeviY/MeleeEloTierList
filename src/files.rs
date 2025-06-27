@@ -4,18 +4,70 @@ use anyhow::{Context, Result, anyhow, bail};
 use bincode::{Decode, Encode};
 use chrono::{DateTime, Utc};
 use fs2::FileExt;
+use num_enum::TryFromPrimitive;
 use peppi::{game::Game, io::slippi::read};
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::HashSet,
     fs::{self, OpenOptions},
     io,
     path::{Path, PathBuf},
 };
-use thiserror::Error;
+use utoipa::ToSchema;
 use walkdir::WalkDir;
 
-#[derive(Encode, Decode, Debug, Clone, Copy, serde::Serialize)]
+#[derive(
+    Encode,
+    Decode,
+    Debug,
+    Clone,
+    Copy,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    TryFromPrimitive,
+    ToSchema,
+)]
+#[repr(u16)]
+pub enum Stage {
+    Dummy,
+    Test,
+    FountainOfDreams,
+    PokemonStadium,
+    PrincessPeachsCastle,
+    KongoJungle,
+    Brinstar,
+    Corneria,
+    YoshisStory,
+    Onett,
+    MuteCity,
+    RainbowCruise,
+    JungleJapes,
+    GreatBay,
+    HyruleTemple,
+    BrinstarDepths,
+    YoshisIsland,
+    GreenGreens,
+    Fourside,
+    MushroomKingdomI,
+    MushroomKingdomII,
+    Akaneia,
+    Venom,
+    PokeFloats,
+    BigBlue,
+    IcicleMountain,
+    IceTop,
+    FlatZone,
+    DreamLand64,
+    YoshisIslandN64,
+    KongoJungleN64,
+    BattleField,
+    FinalDestination,
+}
+
+#[derive(Encode, Decode, Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
 pub enum CSSCharacter {
     CaptainFalcon,
     DonkeyKong,
@@ -79,7 +131,8 @@ impl From<InGameCharacter> for CSSCharacter {
     }
 }
 
-#[derive(Encode, Decode, Debug, Clone)]
+#[derive(Encode, Decode, Debug, Clone, TryFromPrimitive)]
+#[repr(i32)]
 pub enum InGameCharacter {
     Mario,
     Fox,
@@ -110,60 +163,18 @@ pub enum InGameCharacter {
     Roy,
 }
 
-#[derive(Debug, Error)]
-pub enum InGameCharacterError {
-    #[error("Invalid InGameCharacter value: {0}")]
-    InvalidValue(i32),
-}
-
-impl TryFrom<i32> for InGameCharacter {
-    type Error = InGameCharacterError;
-    fn try_from(value: i32) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(InGameCharacter::Mario),
-            1 => Ok(InGameCharacter::Fox),
-            2 => Ok(InGameCharacter::CaptainFalcon),
-            3 => Ok(InGameCharacter::DonkeyKong),
-            4 => Ok(InGameCharacter::Kirby),
-            5 => Ok(InGameCharacter::Bowser),
-            6 => Ok(InGameCharacter::Link),
-            7 => Ok(InGameCharacter::Sheik),
-            8 => Ok(InGameCharacter::Ness),
-            9 => Ok(InGameCharacter::Peach),
-            10 => Ok(InGameCharacter::Popo),
-            11 => Ok(InGameCharacter::Nana),
-            12 => Ok(InGameCharacter::Pikachu),
-            13 => Ok(InGameCharacter::Samus),
-            14 => Ok(InGameCharacter::Yoshi),
-            15 => Ok(InGameCharacter::Jigglypuff),
-            16 => Ok(InGameCharacter::Mewtwo),
-            17 => Ok(InGameCharacter::Luigi),
-            18 => Ok(InGameCharacter::Marth),
-            19 => Ok(InGameCharacter::Zelda),
-            20 => Ok(InGameCharacter::YoungLink),
-            21 => Ok(InGameCharacter::DrMario),
-            22 => Ok(InGameCharacter::Falco),
-            23 => Ok(InGameCharacter::Pichu),
-            24 => Ok(InGameCharacter::GameAndWatch),
-            25 => Ok(InGameCharacter::Ganondorf),
-            26 => Ok(InGameCharacter::Roy),
-            _ => Err(InGameCharacterError::InvalidValue(value)),
-        }
-    }
-}
-
 // impl InGameCharacter {
 //     pub fn from<i32>(value: i32) -> Option<Self> {}
 // }
 
-#[derive(Encode, Decode, Debug, Clone)]
+#[derive(Encode, Decode, Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct Match {
     hash: String,
     pub datetime: i64,
     pub frames: usize,
-    stage: u16,
+    pub stage: Stage,
     pub players: (PlayerInfo, PlayerInfo),
-    is_online: bool,
+    pub is_online: bool,
     pub end_type: u8,
     pub lras_initiator: Option<u8>,
     pub ignore: bool,
@@ -175,7 +186,7 @@ impl Default for Match {
             hash: String::new(),
             datetime: Utc::now().timestamp(),
             frames: 0,
-            stage: 0,
+            stage: Stage::Dummy,
             players: (PlayerInfo::default(), PlayerInfo::default()),
             is_online: false,
             end_type: peppi::game::EndMethod::Unresolved as u8,
@@ -185,12 +196,12 @@ impl Default for Match {
     }
 }
 
-#[derive(Encode, Decode, Debug, Clone)]
+#[derive(Encode, Decode, Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct PlayerInfo {
-    code: String,
+    pub code: String,
     port: u8,
     pub character: CSSCharacter,
-    stocks: u8,
+    pub stocks: u8,
     pub won: bool,
 }
 
@@ -341,7 +352,7 @@ pub fn parse_replay(game: peppi::game::immutable::Game) -> Result<Match> {
 
     Ok(Match {
         hash,
-        stage: game.start().stage,
+        stage: Stage::try_from(game.start().stage)?,
         datetime,
         players: players_tuple,
         end_type: game_end.method as u8,
