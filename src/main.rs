@@ -16,6 +16,10 @@ use tokio::sync::Mutex;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::time::{Duration, sleep};
 
+// TODO:
+// Add extra dirs section.
+// Investigate other database file formats.
+
 #[derive(Debug, Clone, Default, serde::Serialize)]
 pub struct Matchup {
     win_rate: Option<f64>,

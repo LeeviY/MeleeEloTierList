@@ -244,12 +244,19 @@ function renderLastResults(results) {
 
             const ratingText = document.createElement("p");
             ratingText.classList.add("item-rating");
-            ratingText.textContent = `${Math.round(items.rating_diff)}`;
+            ratingText.textContent = `Rating: ${Math.round(items.rating_diff)}`;
             itemDiv.appendChild(ratingText);
+
+            const rdText = document.createElement("p");
+            rdText.classList.add("item-rating");
+            rdText.textContent = `RD: ${Math.round(items.rd_diff)}`;
+            itemDiv.appendChild(rdText);
 
             const probabilityText = document.createElement("p");
             probabilityText.classList.add("item-rating");
-            probabilityText.textContent = `${Math.round(items.win_probability * 100) / 100}`;
+            probabilityText.textContent = `P(win): ${
+                Math.round(items.win_probability * 100) / 100
+            }`;
             itemDiv.appendChild(probabilityText);
 
             resultDiv.appendChild(itemDiv);
