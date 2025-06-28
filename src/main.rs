@@ -5,6 +5,7 @@ mod replays;
 mod routes;
 mod settings;
 
+use std::cmp::min;
 use std::collections::{HashMap, HashSet};
 use std::io::{self, Write};
 use std::sync::Arc;
@@ -18,7 +19,7 @@ use tokio::time::{Duration, sleep};
 #[derive(Debug, Clone, Default, serde::Serialize)]
 pub struct Matchup {
     win_rate: Option<f64>,
-    matches: i32,
+    matches: usize,
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize)]
@@ -28,6 +29,27 @@ pub struct LastResult {
     pub rd_diff: f64,
     pub volatility_diff: f64,
     pub win_probability: f64,
+}
+
+impl LastResult {
+    fn new(
+        character: usize,
+        old_player: &glicko::Player,
+        new_player: &glicko::Player,
+        old_opponent: &glicko::Player,
+    ) -> Self {
+        Self {
+            character: character as u8,
+            rating_diff: new_player.rating - old_player.rating,
+            rd_diff: new_player.rd - old_player.rd,
+            volatility_diff: new_player.volatility - old_player.volatility,
+            win_probability: glicko::win_probability(
+                old_player.rating,
+                old_opponent.rating,
+                old_opponent.rd,
+            ),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -76,7 +98,12 @@ impl AppState {
         self.matches
             .values()
             .filter(|m| {
-                !m.ignore && m.frames > settings::MIN_FRAMES && !matches!(m.end_type, 0 | 7)
+                !m.ignore
+                    && m.frames > settings::MIN_FRAMES
+                    && !matches!(
+                        m.end_method,
+                        files::EndMethod::Unresolved | files::EndMethod::NoContest
+                    )
             })
             .cloned()
             .collect()
@@ -86,7 +113,10 @@ impl AppState {
         character_ratings: &(Vec<glicko::Player>, Vec<glicko::Player>),
         matches: &Vec<files::Match>,
     ) -> (Vec<glicko::Player>, Vec<glicko::Player>) {
-        let mut games_per_character = (vec![Vec::new(); 26], vec![Vec::new(); 26]);
+        let mut games_per_character = (
+            vec![Vec::new(); files::CHARACTER_COUNT],
+            vec![Vec::new(); files::CHARACTER_COUNT],
+        );
 
         for m in matches {
             let (p0_char, p1_char) = (
@@ -97,13 +127,13 @@ impl AppState {
             games_per_character.0[p0_char].push(glicko::Opponent {
                 rating: character_ratings.1[p1_char].rating,
                 rd: character_ratings.1[p1_char].rd,
-                score: m.players.0.won as i32 as f64,
+                score: if m.players.0.won { 1.0 } else { 0.0 },
             });
 
             games_per_character.1[p1_char].push(glicko::Opponent {
                 rating: character_ratings.0[p0_char].rating,
                 rd: character_ratings.0[p0_char].rd,
-                score: m.players.1.won as i32 as f64,
+                score: if m.players.1.won { 1.0 } else { 0.0 },
             });
         }
 
@@ -131,48 +161,57 @@ impl AppState {
                 volatility: 0.06,
                 matches: 0,
             };
-            26
+            files::CHARACTER_COUNT
         ];
-        let mut character_ratings = (default_ratings.clone(), default_ratings.clone());
+        let mut character_ratings = (default_ratings.clone(), default_ratings);
 
-        let mut grouped: HashMap<String, Vec<files::Match>> = HashMap::new();
-        let matches = self.get_values_filtered();
-        for m in matches {
-            let naive = DateTime::from_timestamp(m.datetime, 0).unwrap();
-            let date = naive.format("%Y-%m-%d").to_string();
+        let grouped_matches = self
+            .get_values_filtered()
+            .into_iter()
+            .map(|m| {
+                let date = DateTime::from_timestamp(m.datetime, 0)
+                    .unwrap()
+                    .format("%Y-%m-%d")
+                    .to_string();
+                (date, m)
+            })
+            .fold(
+                HashMap::<String, Vec<files::Match>>::new(),
+                |mut acc, (date, match_data)| {
+                    acc.entry(date).or_default().push(match_data);
+                    acc
+                },
+            );
 
-            grouped.entry(date).or_default().push(m.clone());
-        }
-
-        let dates: Vec<_> = grouped
+        let dates = grouped_matches
             .keys()
-            .filter_map(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
-            .collect();
-        let min_date = dates.iter().min().cloned();
-        let max_date = dates.iter().max().cloned();
+            .filter_map(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok());
 
-        if let (Some(start), Some(end)) = (min_date, max_date) {
-            let mut date = start;
-            while date <= end {
-                let date_str = date.format("%Y-%m-%d").to_string();
-                if let Some(matches) = grouped.get(&date_str) {
-                    character_ratings = Self::update_character_ratings(&character_ratings, matches);
-                } else {
-                    character_ratings =
-                        Self::update_character_ratings(&character_ratings, &Vec::new());
-                }
-
-                date += chrono::Duration::days(1);
-            }
-        } else {
+        let Some((start_date, end_date)) = dates.clone().min().zip(dates.max()) else {
             println!("Grouped map is empty or contains no valid dates.");
+            return character_ratings;
+        };
+
+        let date_iter = std::iter::successors(Some(start_date), |d| {
+            let next = *d + chrono::Duration::days(1);
+            (next <= end_date).then_some(next)
+        });
+
+        for date in date_iter {
+            let empty_vec = Vec::new();
+            let matches = grouped_matches
+                .get(&date.format("%Y-%m-%d").to_string())
+                .unwrap_or(&empty_vec);
+
+            character_ratings = Self::update_character_ratings(&character_ratings, matches);
         }
 
         character_ratings
     }
 
     fn get_matchup_update_data(&self) -> Vec<Vec<Matchup>> {
-        let mut matchup_chart = vec![vec![Matchup::default(); 26]; 26];
+        let mut matchup_chart =
+            vec![vec![Matchup::default(); files::CHARACTER_COUNT]; files::CHARACTER_COUNT];
 
         let mut matches: Vec<_> = self.get_values_filtered();
         matches.sort_by_key(|m| -m.datetime);
@@ -181,10 +220,10 @@ impl AppState {
             let matchup =
                 &mut matchup_chart[m.players.0.character as usize][m.players.1.character as usize];
 
-            if matchup.matches < 100 {
-                matchup.matches += 1;
-                *matchup.win_rate.get_or_insert(0.0) += m.players.0.won as i32 as f64;
+            if matchup.matches < settings::RATING_WINDOW_SIZE {
+                *matchup.win_rate.get_or_insert(0.0) += if m.players.0.won { 1.0 } else { 0.0 };
             }
+            matchup.matches += 1;
         }
 
         matchup_chart
@@ -193,7 +232,10 @@ impl AppState {
                 row.into_iter()
                     .map(|mut matchup| {
                         if let Some(total_wins) = matchup.win_rate {
-                            matchup.win_rate = Some(total_wins / matchup.matches as f64);
+                            matchup.win_rate = Some(
+                                total_wins
+                                    / min(matchup.matches, settings::RATING_WINDOW_SIZE) as f64,
+                            );
                         }
                         matchup
                     })
@@ -214,82 +256,79 @@ impl AppState {
         &self,
         new_ratings: &(Vec<glicko::Player>, Vec<glicko::Player>),
     ) -> (LastResult, LastResult) {
-        let players = self.last_match.clone().unwrap().players;
-        let p0_character = players.0.character as usize;
-        let p1_character = players.1.character as usize;
+        let match_players = &self.last_match.as_ref().unwrap().players;
+        let p0_character = match_players.0.character as usize;
+        let p1_character = match_players.1.character as usize;
 
         (
-            LastResult {
-                character: p0_character as u8,
-                rating_diff: new_ratings.0[p0_character].rating
-                    - self.ratings.0[p0_character].rating,
-                rd_diff: new_ratings.0[p0_character].rd - self.ratings.0[p0_character].rd,
-                volatility_diff: new_ratings.0[p0_character].volatility
-                    - self.ratings.0[p0_character].volatility,
-                win_probability: glicko::win_probability(
-                    self.ratings.0[p0_character].rating,
-                    self.ratings.1[p1_character].rating,
-                    self.ratings.1[p1_character].rd,
-                ),
-            },
-            LastResult {
-                character: p1_character as u8,
-                rating_diff: new_ratings.1[p1_character].rating
-                    - self.ratings.1[p1_character].rating,
-                rd_diff: new_ratings.1[p1_character].rd - self.ratings.1[p1_character].rd,
-                volatility_diff: new_ratings.1[p1_character].volatility
-                    - self.ratings.1[p1_character].volatility,
-                win_probability: glicko::win_probability(
-                    self.ratings.1[p1_character].rating,
-                    self.ratings.0[p0_character].rating,
-                    self.ratings.0[p0_character].rd,
-                ),
-            },
+            LastResult::new(
+                p0_character,
+                &self.ratings.0[p0_character],
+                &new_ratings.0[p0_character],
+                &self.ratings.1[p1_character],
+            ),
+            LastResult::new(
+                p1_character,
+                &self.ratings.1[p1_character],
+                &new_ratings.1[p1_character],
+                &self.ratings.0[p0_character],
+            ),
         )
     }
 }
 
-async fn background_task(state: Arc<Mutex<AppState>>) {
+async fn background_task(state: Arc<Mutex<AppState>>, write_to_db: bool) {
     let mut counter = 0;
+
     loop {
-        let Some(latest_directory) = files::find_replay_directory() else {
+        let Some(replay_dir) = files::find_replay_directory() else {
             eprintln!("\rFailed to find latest replay directory");
             return;
         };
 
         print!(
             "\rWatching for new replays in {} {:<3}",
-            latest_directory.to_str().unwrap_or("Unknown"),
-            ".".repeat(counter % 4)
+            replay_dir.to_str().unwrap_or("Unknown"),
+            ".".repeat(counter % 4),
         );
-        io::stdout().flush().unwrap();
+        io::stdout().flush().ok();
         counter += 1;
 
         let mut state_guard = state.lock().await;
-        let matches = &mut state_guard.matches;
-        let seen_replays: HashSet<String> = matches.keys().cloned().collect();
+        let seen: HashSet<_> = state_guard.matches.keys().cloned().collect();
 
-        if let Some(new_replay_file) = files::detect_new_files(&seen_replays, &latest_directory) {
-            println!("\rNew replay detected: {}", new_replay_file);
-            match replays::process_replay(new_replay_file.clone(), matches) {
-                Some(Ok(m)) => {
-                    println!("{:#?}", m);
-                    matches.insert(new_replay_file, m.clone());
-                    state_guard.last_match = Some(m);
+        // TODO: Get all new files instead of just one and batch process them.
+        if let Some(replay_file) = files::detect_new_file(&seen, &replay_dir) {
+            println!("\rNew replay detected: {}", replay_file);
+
+            match replays::process_replay(replay_file.clone(), &state_guard.matches) {
+                Some(Ok(parsed)) => {
+                    println!("{:#?}", parsed);
+                    state_guard
+                        .matches
+                        .insert(replay_file.clone(), parsed.clone());
+                    state_guard.last_match = Some(parsed);
                     state_guard.broadcast_updates();
+
+                    if write_to_db {
+                        db::write_to_file(&state_guard.matches, settings::DB_FILENAME)
+                            .await
+                            .unwrap_or_else(|e| println!("Error writing to db: {}", e));
+                    }
                 }
                 Some(Err(e)) => {
-                    matches.insert(new_replay_file.clone(), files::Match::default());
-                    println!("Error processing replay: {} {}", new_replay_file, e);
+                    state_guard
+                        .matches
+                        .insert(replay_file.clone(), files::Match::default());
+                    println!("Error processing replay: {} {}", replay_file, e);
                 }
                 None => {
-                    println!("Skipped replay: {}", new_replay_file);
+                    println!("Skipped replay: {}", replay_file);
                 }
             }
         }
 
         drop(state_guard);
-
         sleep(Duration::from_millis(500)).await;
     }
 }
@@ -302,7 +341,12 @@ async fn shutdown_signal() {
 
 #[tokio::main]
 async fn main() {
-    // tests();
+    let args: Vec<String> = std::env::args().collect();
+    let mut write_to_db = true;
+    if args.contains(&"nowrite".to_string()) {
+        println!("Not writing replays to the database");
+        write_to_db = false;
+    }
 
     let state = Arc::new(Mutex::new(AppState::new(
         db::read_from_file("db.bc").await.unwrap_or_else(|err| {
@@ -311,23 +355,23 @@ async fn main() {
         }),
     )));
 
-    println!("{:?}", state.lock().await.matches.len());
+    let mut state_guard = state.lock().await;
+    println!("Matches in db: {:?}", state_guard.matches.len());
 
     replays::batch_process_replays_threaded(
         files::find_slippi_directory().unwrap().to_str().unwrap(),
-        &mut state.lock().await.matches,
+        &mut state_guard.matches,
     );
-
-    {
-        let mut state_guard = state.lock().await;
-        state_guard.ratings = state_guard.get_character_ratings_data();
+    if write_to_db {
+        db::write_to_file(&state_guard.matches, settings::DB_FILENAME)
+            .await
+            .unwrap_or_else(|e| println!("Error writing to db: {}", e));
     }
 
-    db::write_to_file(&state.lock().await.matches, "db.bc")
-        .await
-        .unwrap_or_else(|e| println!("Error writing to db: {}", e));
+    state_guard.ratings = state_guard.get_character_ratings_data();
+    drop(state_guard);
 
-    tokio::spawn(background_task(state.clone()));
+    tokio::spawn(background_task(state.clone(), write_to_db));
 
     axum::serve(
         tokio::net::TcpListener::bind("127.0.0.1:5000")
@@ -339,40 +383,3 @@ async fn main() {
     .await
     .unwrap();
 }
-
-// fn tests() {
-//     println!(
-//         "{:#?}",
-//         files::parse_replay(files::read_replay("test_replays/Game_20250619T235953.slp").unwrap())
-//             .unwrap()
-//     );
-//     println!(
-//         "{:#?}",
-//         files::parse_replay(files::read_replay("test_replays/Game_20250202T203150.slp").unwrap())
-//             .unwrap()
-//     );
-//     println!(
-//         "{:#?}",
-//         files::parse_replay(files::read_replay("test_replays/Game_20241208T180113.slp").unwrap())
-//             .unwrap()
-//     );
-
-//     println!(
-//         "{:#?}",
-//         files::parse_replay(files::read_replay("test_replays/Game_20250623T210148.slp").unwrap())
-//             .unwrap()
-//     );
-
-//     println!(
-//         "{:#?}",
-//         files::parse_replay(
-//             files::read_replay("test_replays/Game_20250623T210148_other.slp").unwrap()
-//         )
-//         .unwrap()
-//     );
-
-//     // println!(
-//     //     "{:#?}",
-//     //     files::find_slp_files(files::find_slippi_directory().unwrap().to_str().unwrap())
-//     // );
-// }

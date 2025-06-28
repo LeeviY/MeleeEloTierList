@@ -17,6 +17,10 @@ use walkdir::WalkDir;
 
 use crate::settings;
 
+pub const CHARACTER_COUNT: usize = 26;
+const NO_HANDICAP: u8 = 9;
+const WINNING_PLACEMENT: u8 = 0;
+
 #[derive(
     Encode,
     Decode,
@@ -163,11 +167,7 @@ pub enum InGameCharacter {
     Roy,
 }
 
-// impl InGameCharacter {
-//     pub fn from<i32>(value: i32) -> Option<Self> {}
-// }
-
-#[derive(Encode, Decode, Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Encode, Decode, Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
 pub struct Match {
     hash: String,
     pub datetime: i64,
@@ -175,7 +175,7 @@ pub struct Match {
     pub stage: Stage,
     pub players: (PlayerInfo, PlayerInfo),
     pub is_online: bool,
-    pub end_type: u8,
+    pub end_method: EndMethod,
     pub lras_initiator: Option<u8>,
     pub ignore: bool,
 }
@@ -189,14 +189,26 @@ impl Default for Match {
             stage: Stage::Dummy,
             players: (PlayerInfo::default(), PlayerInfo::default()),
             is_online: false,
-            end_type: peppi::game::EndMethod::Unresolved as u8,
+            end_method: EndMethod::Unresolved,
             lras_initiator: None,
             ignore: true,
         }
     }
 }
 
-#[derive(Encode, Decode, Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[repr(u8)]
+#[derive(
+    Debug, Clone, Serialize, Deserialize, TryFromPrimitive, ToSchema, Encode, Decode, PartialEq, Eq,
+)]
+pub enum EndMethod {
+    Unresolved = 0,
+    Time = 1,
+    Game = 2,
+    Resolved = 3,
+    NoContest = 7,
+}
+
+#[derive(Encode, Decode, Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
 pub struct PlayerInfo {
     pub code: String,
     port: u8,
@@ -279,6 +291,10 @@ pub fn parse_replay(game: peppi::game::immutable::Game) -> Result<Match> {
                 bail!("Replay has a non-human player");
             }
 
+            if player.handicap != NO_HANDICAP {
+                bail!("Replay has a player with handicap");
+            }
+
             let netplay_code = if is_online {
                 let code = player
                     .netplay
@@ -334,7 +350,7 @@ pub fn parse_replay(game: peppi::game::immutable::Game) -> Result<Match> {
                         .context("Invalid InGameCharacter value")?,
                 ),
                 stocks,
-                won: placement == 0,
+                won: placement == WINNING_PLACEMENT,
             })
         })
         .collect::<Result<Vec<_>>>()?;
@@ -347,7 +363,7 @@ pub fn parse_replay(game: peppi::game::immutable::Game) -> Result<Match> {
                 (b.clone(), a.clone())
             }
         }
-        _ => bail!("Vector length is not 2"),
+        _ => bail!("Player vector length is not 2"),
     };
 
     Ok(Match {
@@ -355,7 +371,7 @@ pub fn parse_replay(game: peppi::game::immutable::Game) -> Result<Match> {
         stage: Stage::try_from(game.start().stage)?,
         datetime,
         players: players_tuple,
-        end_type: game_end.method as u8,
+        end_method: EndMethod::try_from(game_end.method as u8)?,
         lras_initiator: game_end.lras_initiator.flatten().map(|port| port as u8),
         frames: game.len(),
         ignore: false,
@@ -432,14 +448,13 @@ fn is_slp<P: AsRef<Path>>(path: P) -> bool {
     path.as_ref().extension().is_some_and(|ext| ext == "slp")
 }
 
-pub fn detect_new_files(games_set: &HashSet<String>, directory: &PathBuf) -> Option<String> {
+pub fn detect_new_file(games_set: &HashSet<String>, directory: &PathBuf) -> Option<String> {
     fs::read_dir(directory)
         .ok()?
         .filter_map(|e| e.ok())
         .filter(|e| is_slp(e.path()))
-        .map(|e| directory.join(&e.path()).to_string_lossy().to_string())
-        .filter(|path| !games_set.contains(path) && !path.is_empty() && !is_file_locked(&path))
-        .next()
+        .map(|e| directory.join(e.path()).to_string_lossy().to_string())
+        .find(|path| !games_set.contains(path) && !path.is_empty() && !is_file_locked(path))
 }
 
 pub fn find_slp_files(directory: &str) -> Vec<String> {
@@ -463,5 +478,167 @@ pub fn is_file_locked<P: AsRef<Path>>(file_path: P) -> bool {
             false
         }
         Err(_) => true,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_sample_replays() {
+        let test_cases = [
+            (
+                "test_replays/Game_20250619T235953.slp",
+                Match {
+                    hash: "xxh3:b527493fe7ad75e8".into(),
+                    datetime: 1750366793,
+                    frames: 9429,
+                    stage: Stage::DreamLand64,
+                    players: (
+                        PlayerInfo {
+                            code: "LY＃863".into(),
+                            port: 0,
+                            character: CSSCharacter::Falco,
+                            stocks: 0,
+                            won: false,
+                        },
+                        PlayerInfo {
+                            code: "KEKW＃849".into(),
+                            port: 1,
+                            character: CSSCharacter::Marth,
+                            stocks: 2,
+                            won: true,
+                        },
+                    ),
+                    is_online: true,
+                    end_method: EndMethod::Game,
+                    lras_initiator: None,
+                    ignore: false,
+                },
+            ),
+            (
+                "test_replays/Game_20250202T203150.slp",
+                Match {
+                    hash: "xxh3:939c0e8dcfccadf1".into(),
+                    datetime: 1738521110,
+                    frames: 8200,
+                    stage: Stage::BattleField,
+                    players: (
+                        PlayerInfo {
+                            code: "LY＃863".into(),
+                            port: 1,
+                            character: CSSCharacter::Zelda,
+                            stocks: 2,
+                            won: true,
+                        },
+                        PlayerInfo {
+                            code: "KEKW＃849".into(),
+                            port: 0,
+                            character: CSSCharacter::DonkeyKong,
+                            stocks: 0,
+                            won: false,
+                        },
+                    ),
+                    is_online: true,
+                    end_method: EndMethod::Game,
+                    lras_initiator: None,
+                    ignore: false,
+                },
+            ),
+            (
+                "test_replays/Game_20241208T180113.slp",
+                Match {
+                    hash: "xxh3:a72fe22326d75056".into(),
+                    datetime: 1733673673,
+                    frames: 9251,
+                    stage: Stage::BattleField,
+                    players: (
+                        PlayerInfo {
+                            code: "LY＃863".into(),
+                            port: 1,
+                            character: CSSCharacter::Sheik,
+                            stocks: 3,
+                            won: true,
+                        },
+                        PlayerInfo {
+                            code: "KEKW＃849".into(),
+                            port: 3,
+                            character: CSSCharacter::Mewtwo,
+                            stocks: 0,
+                            won: false,
+                        },
+                    ),
+                    is_online: false,
+                    end_method: EndMethod::Game,
+                    lras_initiator: None,
+                    ignore: false,
+                },
+            ),
+            (
+                "test_replays/Game_20250623T210148.slp",
+                Match {
+                    hash: "xxh3:99685730104a9eba".into(),
+                    datetime: 1750701708,
+                    frames: 14500,
+                    stage: Stage::PokemonStadium,
+                    players: (
+                        PlayerInfo {
+                            code: "LY＃863".into(),
+                            port: 1,
+                            character: CSSCharacter::Falco,
+                            stocks: 1,
+                            won: true,
+                        },
+                        PlayerInfo {
+                            code: "KEKW＃849".into(),
+                            port: 0,
+                            character: CSSCharacter::CaptainFalcon,
+                            stocks: 0,
+                            won: false,
+                        },
+                    ),
+                    is_online: true,
+                    end_method: EndMethod::Game,
+                    lras_initiator: None,
+                    ignore: false,
+                },
+            ),
+            (
+                "test_replays/Game_20250623T210148_other.slp",
+                Match {
+                    hash: "xxh3:a448cabc9cf1409d".into(),
+                    datetime: 1750701708,
+                    frames: 14500,
+                    stage: Stage::PokemonStadium,
+                    players: (
+                        PlayerInfo {
+                            code: "LY＃863".into(),
+                            port: 1,
+                            character: CSSCharacter::Falco,
+                            stocks: 1,
+                            won: true,
+                        },
+                        PlayerInfo {
+                            code: "KEKW＃849".into(),
+                            port: 0,
+                            character: CSSCharacter::CaptainFalcon,
+                            stocks: 0,
+                            won: false,
+                        },
+                    ),
+                    is_online: true,
+                    end_method: EndMethod::Game,
+                    lras_initiator: None,
+                    ignore: false,
+                },
+            ),
+        ];
+
+        for (path, expected) in test_cases {
+            let replay = read_replay(path).expect("Failed to read replay");
+            let actual = parse_replay(replay).expect("Failed to parse replay");
+            assert_eq!(actual, expected, "Mismatch for replay file: {}", path);
+        }
     }
 }
