@@ -19,6 +19,7 @@ use tokio::time::{Duration, sleep};
 // TODO:
 // Add extra dirs section.
 // Investigate other database file formats.
+// Change the match map key to hash from filepath.
 
 #[derive(Debug, Clone, Default, serde::Serialize)]
 pub struct Matchup {
@@ -360,6 +361,10 @@ async fn main() {
     )));
 
     let mut state_guard = state.lock().await;
+    let csv_matches = db::read_matches_from_csv("db.csv").unwrap();
+    println!("Migrated matches: {}", csv_matches.len());
+    state_guard.matches.extend(csv_matches);
+
     println!("Matches in db: {:?}", state_guard.matches.len());
 
     replays::batch_process_replays_threaded(

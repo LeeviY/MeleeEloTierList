@@ -71,7 +71,20 @@ pub enum Stage {
     FinalDestination,
 }
 
-#[derive(Encode, Decode, Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
+#[derive(
+    Encode,
+    Decode,
+    Debug,
+    Clone,
+    Copy,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    ToSchema,
+    TryFromPrimitive,
+)]
+#[repr(u16)]
 pub enum CSSCharacter {
     CaptainFalcon,
     DonkeyKong,
@@ -169,7 +182,7 @@ pub enum InGameCharacter {
 
 #[derive(Encode, Decode, Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
 pub struct Match {
-    hash: String,
+    pub hash: String,
     pub datetime: i64,
     pub frames: usize,
     pub stage: Stage,
@@ -211,7 +224,7 @@ pub enum EndMethod {
 #[derive(Encode, Decode, Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
 pub struct PlayerInfo {
     pub code: String,
-    port: u8,
+    pub port: u8,
     pub character: CSSCharacter,
     pub stocks: u8,
     pub won: bool,

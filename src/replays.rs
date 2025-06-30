@@ -51,7 +51,7 @@ pub fn batch_process_replays_threaded(
     replay_dir: &str,
     matches: &mut HashMap<String, files::Match>,
 ) {
-    println!("\nProcessing replays...");
+    println!("Processing replays...");
     let start = Instant::now();
     let slp_files = files::find_slp_files(replay_dir);
     let skipped = AtomicUsize::new(0);
@@ -76,7 +76,7 @@ pub fn batch_process_replays_threaded(
     matches.extend(combined);
 
     println!(
-        "\nProcessed {} (Skipped {:?}) replays in {:?}",
+        "Processed {} (Skipped {:?}) replays in {:?}",
         slp_files.len(),
         skipped,
         start.elapsed()

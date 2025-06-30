@@ -130,6 +130,13 @@
     color: #e0e0e0;
 }
 
+.vs-text {
+    font-weight: bold;
+    font-size: 1.2em;
+    text-align: center;
+    align-self: center;
+}
+
 .tier-s {
     background-color: #ff4747;
 }

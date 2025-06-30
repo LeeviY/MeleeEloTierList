@@ -42,7 +42,7 @@ loadLocalStorage();
 function loadLocalStorage() {
     _isNormalRanks = JSON.parse(localStorage.getItem("normalRanks")) || false;
     localStorage.setItem("normalRanks", JSON.stringify(_isNormalRanks));
-    _lastResults = JSON.parse(localStorage.getItem("lastResults")) || [];
+    _lastResults = JSON.parse(localStorage.getItem("lastResults")).slice(-8) || [];
 }
 
 const socket = new WebSocket("ws://127.0.0.1:5000/ws");
@@ -67,7 +67,7 @@ socket.onmessage = (event) => {
             updateTierList(msg.data);
             break;
         case "results_update":
-            _lastResults = [..._lastResults, msg.data].slice(-10);
+            _lastResults = [..._lastResults, msg.data].slice(-8);
             localStorage.setItem("lastResults", JSON.stringify(_lastResults));
             renderLastResults(_lastResults);
             break;
@@ -233,10 +233,11 @@ function renderLastResults(results) {
         }
         const resultDiv = document.createElement("div");
         resultDiv.classList.add("result");
-        for (const [player, items] of Object.entries(result)) {
+        const players = Object.entries(result);
+        players.forEach(([player, items], index) => {
             const itemDiv = document.createElement("div");
             itemDiv.classList.add("item");
-            itemDiv.style.float = player == "P1" ? "left" : "right";
+            itemDiv.style.float = player === "P1" ? "left" : "right";
 
             const img = document.createElement("img");
             img.src = `/static/images/${CHARACTERS[items.character]}.png`;
@@ -260,7 +261,14 @@ function renderLastResults(results) {
             itemDiv.appendChild(probabilityText);
 
             resultDiv.appendChild(itemDiv);
-        }
+
+            if (index === 0 && players.length === 2) {
+                const vsText = document.createElement("div");
+                vsText.classList.add("vs-text");
+                vsText.textContent = "vs.";
+                resultDiv.appendChild(vsText);
+            }
+        });
         const clear = document.createElement("div");
         clear.style.clear = "both";
         resultDiv.appendChild(clear);
