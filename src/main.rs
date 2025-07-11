@@ -12,6 +12,7 @@ use std::sync::Arc;
 
 use axum::extract::ws::Message;
 use chrono::{DateTime, NaiveDate};
+use serde::Serialize;
 use tokio::sync::Mutex;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::time::{Duration, sleep};
@@ -55,6 +56,12 @@ impl LastResult {
             ),
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RatingPeriod {
+    pub date: NaiveDate,
+    pub ratings: (Vec<glicko::Player>, Vec<glicko::Player>),
 }
 
 #[derive(Debug, Clone)]
@@ -212,6 +219,68 @@ impl AppState {
         }
 
         character_ratings
+    }
+
+    fn get_character_ratings_data2(&self) -> Vec<RatingPeriod> {
+        let default_ratings = vec![
+            glicko::Player {
+                rating: 1500.0,
+                rd: 350.0,
+                volatility: 0.06,
+                matches: 0,
+            };
+            files::CHARACTER_COUNT
+        ];
+        let mut character_ratings = (default_ratings.clone(), default_ratings);
+
+        let mut ratings_history = Vec::new();
+
+        let grouped_matches = self
+            .get_values_filtered()
+            .into_iter()
+            .map(|m| {
+                let date = DateTime::from_timestamp(m.datetime, 0)
+                    .unwrap()
+                    .format("%Y-%m-%d")
+                    .to_string();
+                (date, m)
+            })
+            .fold(
+                HashMap::<String, Vec<files::Match>>::new(),
+                |mut acc, (date, match_data)| {
+                    acc.entry(date).or_default().push(match_data);
+                    acc
+                },
+            );
+
+        let dates = grouped_matches
+            .keys()
+            .filter_map(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok());
+
+        let Some((start_date, end_date)) = dates.clone().min().zip(dates.max()) else {
+            println!("Grouped map is empty or contains no valid dates.");
+            return ratings_history;
+        };
+
+        let date_iter = std::iter::successors(Some(start_date), |d| {
+            let next = *d + chrono::Duration::days(1);
+            (next <= end_date).then_some(next)
+        });
+
+        for date in date_iter {
+            let empty_vec = Vec::new();
+            let matches = grouped_matches
+                .get(&date.format("%Y-%m-%d").to_string())
+                .unwrap_or(&empty_vec);
+
+            character_ratings = Self::update_character_ratings(&character_ratings, matches);
+            ratings_history.push(RatingPeriod {
+                date,
+                ratings: character_ratings.clone(),
+            });
+        }
+
+        ratings_history
     }
 
     fn get_matchup_update_data(&self) -> Vec<Vec<Matchup>> {
@@ -377,7 +446,7 @@ async fn main() {
             .unwrap_or_else(|e| println!("Error writing to db: {}", e));
     }
 
-    state_guard.ratings = state_guard.get_character_ratings_data();
+    state_guard.ratings = state_guard.get_character_ratings_data().clone();
     drop(state_guard);
 
     tokio::spawn(background_task(state.clone(), write_to_db));

@@ -180,7 +180,7 @@ pub fn create_router(state: Arc<Mutex<AppState>>) -> Router {
         .route("/ws", get(websocket_handler))
         .route("/matchup_chart", get(matchup_chart))
         .route("/stats", get(stats))
-        .route("/character_ratings", get(get_character_ratings))
+        .route("/ratings", get(get_character_ratings))
         .route("/matches/query", post(query_matches))
         .merge(SwaggerUi::new("/docs").url("/api-docs/openapi.json", ApiDoc::openapi()))
         .nest_service("/static", ServeDir::new("static"))
@@ -206,18 +206,22 @@ pub async fn stats() -> Html<String> {
 
 #[utoipa::path(
     get,
-    path = "/character_ratings",
+    path = "/ratings",
     responses(
-        (status = 200, body = [Vec<glicko::Player>])
+        (status = 200, body = [Vec<(Vec<glicko::Player>, Vec<glicko::Player>)>]),
     )
 )]
 pub async fn get_character_ratings(
     State(state): State<Arc<Mutex<AppState>>>,
 ) -> Json<serde_json::Value> {
-    let character_ratings = state.lock().await.get_character_ratings_data();
     Json(json!({
-        "P1": character_ratings.0,
-        "P2": character_ratings.1,
+        "ratings": state.lock().await.get_character_ratings_data2().iter().map(|rp| {
+            json!({
+                "date": rp.date.format("%Y-%m-%d").to_string(),
+                "P1": rp.ratings.0,
+                "P2": rp.ratings.1,
+            })
+        }).collect::<Vec<_>>()
     }))
 }
 

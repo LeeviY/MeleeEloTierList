@@ -4,7 +4,7 @@
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>Tier List Viewer</title>
-        <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
+        <script src="https://d3js.org/d3.v7.min.js"></script>
         <script src="static/js/sidebar.js"></script>
         <script src="static/js/stats.js"></script>
         <link rel="stylesheet" href="static/css/styles.css" />
@@ -32,6 +32,12 @@
                 height: 30px;
                 object-fit: cover;
             }
+
+            svg .line-chart {
+                display: block;
+                width: 100vw;
+                height: 100vh;
+            }
         </style>
     </head>
 
@@ -52,5 +58,18 @@
             <div class="line" id="line1"></div>
             <div class="line" id="line2"></div>
         </div>
+
+        <svg
+            id="p1-rating-progression-chart"
+            class="line-chart"
+            viewBox="0 0 1000 500"
+            preserveAspectRatio="xMidYMid meet"
+        ></svg>
+        <svg
+            id="p2-rating-progression-chart"
+            class="line-chart"
+            viewBox="0 0 1000 500"
+            preserveAspectRatio="xMidYMid meet"
+        ></svg>
     </body>
 </html>
