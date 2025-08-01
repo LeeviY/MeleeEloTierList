@@ -9,10 +9,16 @@ use rayon::prelude::*;
 use crate::files;
 
 #[allow(dead_code)]
-pub fn batch_process_replays(replay_dir: &str, matches: &mut HashMap<String, files::Match>) {
+pub fn batch_process_replays(
+    replay_dirs: Vec<String>,
+    matches: &mut HashMap<String, files::Match>,
+) {
     println!("\nProcessing replays...");
     let start = Instant::now();
-    let slp_files = files::find_slp_files(replay_dir);
+    let slp_files: Vec<String> = replay_dirs
+        .iter()
+        .flat_map(|dir| files::find_slp_files(dir))
+        .collect();
 
     let total = slp_files.len().max(1);
     let step = (total / 100).max(1);
@@ -48,12 +54,15 @@ pub fn batch_process_replays(replay_dir: &str, matches: &mut HashMap<String, fil
 }
 
 pub fn batch_process_replays_threaded(
-    replay_dir: &str,
+    replay_dirs: Vec<String>,
     matches: &mut HashMap<String, files::Match>,
 ) {
     println!("Processing replays...");
     let start = Instant::now();
-    let slp_files = files::find_slp_files(replay_dir);
+    let slp_files: Vec<String> = replay_dirs
+        .iter()
+        .flat_map(|dir| files::find_slp_files(dir))
+        .collect();
     let skipped = AtomicUsize::new(0);
 
     let combined: HashMap<_, _> = slp_files

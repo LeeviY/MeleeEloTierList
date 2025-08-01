@@ -1,19 +1,65 @@
-pub const P1: &str = "LY＃863";
-pub const P2: &str = "KEKW＃849";
+use once_cell::sync::Lazy;
+use serde::{Deserialize, Serialize};
+use std::fs;
+use std::sync::Arc;
 
-pub const MIN_FRAMES: usize = 30 * 60; // 30s * 60fps
-pub const RATING_WINDOW_SIZE: usize = 100;
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Config {
+    pub players: Players,
+    pub directory: Directory,
+    pub database: Database,
+    pub rating: Rating,
+    pub debug: Debug,
+}
 
-pub const DB_FILENAME: &str = "db.bc";
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Players {
+    pub p1_id: String,
+    pub p2_id: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Directory {
+    pub slippi: String,
+    pub extra: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Database {
+    pub path: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Rating {
+    pub min_frames: usize,
+    pub rating_window: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Debug {
+    pub update_db: bool,
+}
+
+const CONFIG_FILE: &str = "config.toml";
+
+pub static CONFIG: Lazy<Arc<Config>> = Lazy::new(|| {
+    let content = fs::read_to_string(CONFIG_FILE).expect("Failed to read config file");
+    let config: Config = toml::from_str(&content).expect("Invalid config format");
+    Arc::new(config)
+});
 
 pub fn match_player_code(code: &str) -> bool {
-    matches!(code, P1 | P2)
+    code == CONFIG.players.p1_id || code == CONFIG.players.p2_id
 }
 
 pub fn r_presser(is_max: bool) -> &'static str {
-    if is_max { P1 } else { P2 }
+    if is_max {
+        CONFIG.players.p1_id.as_str()
+    } else {
+        CONFIG.players.p2_id.as_str()
+    }
 }
 
 pub fn is_player1(id: &str) -> bool {
-    id == P1
+    id == CONFIG.players.p1_id.as_str()
 }

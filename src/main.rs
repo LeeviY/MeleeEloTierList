@@ -5,6 +5,8 @@ mod replays;
 mod routes;
 mod settings;
 
+use settings::CONFIG;
+
 use std::cmp::min;
 use std::collections::{HashMap, HashSet};
 use std::io::{self, Write};
@@ -111,7 +113,7 @@ impl AppState {
             .values()
             .filter(|m| {
                 !m.ignore
-                    && m.frames > settings::MIN_FRAMES
+                    && m.frames > CONFIG.rating.min_frames
                     && !matches!(
                         m.end_method,
                         files::EndMethod::Unresolved | files::EndMethod::NoContest
@@ -294,7 +296,7 @@ impl AppState {
             let matchup =
                 &mut matchup_chart[m.players.0.character as usize][m.players.1.character as usize];
 
-            if matchup.matches < settings::RATING_WINDOW_SIZE {
+            if matchup.matches < CONFIG.rating.rating_window {
                 *matchup.win_rate.get_or_insert(0.0) += if m.players.0.won { 1.0 } else { 0.0 };
             }
             matchup.matches += 1;
@@ -308,7 +310,7 @@ impl AppState {
                         if let Some(total_wins) = matchup.win_rate {
                             matchup.win_rate = Some(
                                 total_wins
-                                    / min(matchup.matches, settings::RATING_WINDOW_SIZE) as f64,
+                                    / min(matchup.matches, CONFIG.rating.rating_window) as f64,
                             );
                         }
                         matchup
@@ -385,7 +387,7 @@ async fn background_task(state: Arc<Mutex<AppState>>, write_to_db: bool) {
                     state_guard.broadcast_updates();
 
                     if write_to_db {
-                        db::write_to_file(&state_guard.matches, settings::DB_FILENAME)
+                        db::write_to_file(&state_guard.matches, &CONFIG.database.path)
                             .await
                             .unwrap_or_else(|e| println!("Error writing to db: {}", e));
                     }
@@ -416,17 +418,19 @@ async fn shutdown_signal() {
 #[tokio::main]
 async fn main() {
     let args: Vec<String> = std::env::args().collect();
-    let mut write_to_db = true;
+    let mut write_to_db = CONFIG.debug.update_db;
     if args.contains(&"nowrite".to_string()) {
         println!("Not writing replays to the database");
         write_to_db = false;
     }
 
     let state = Arc::new(Mutex::new(AppState::new(
-        db::read_from_file("db.bc").await.unwrap_or_else(|err| {
-            eprintln!("Failed to load match database: {err}");
-            HashMap::new()
-        }),
+        db::read_from_file(&CONFIG.database.path)
+            .await
+            .unwrap_or_else(|err| {
+                eprintln!("Failed to load match database: {err}");
+                HashMap::new()
+            }),
     )));
 
     let mut state_guard = state.lock().await;
@@ -436,12 +440,20 @@ async fn main() {
 
     println!("Matches in db: {:?}", state_guard.matches.len());
 
-    replays::batch_process_replays_threaded(
-        files::find_slippi_directory().unwrap().to_str().unwrap(),
-        &mut state_guard.matches,
-    );
+    let replay_dirs: Vec<String> = CONFIG
+        .directory
+        .extra
+        .iter()
+        .cloned()
+        .chain(std::iter::once(CONFIG.directory.slippi.clone()))
+        .collect();
+
+    println!("Processing replays in directories: {:?}", replay_dirs);
+
+    replays::batch_process_replays_threaded(replay_dirs, &mut state_guard.matches);
+    // replays::batch_process_replays(replay_dirs, &mut state_guard.matches);
     if write_to_db {
-        db::write_to_file(&state_guard.matches, settings::DB_FILENAME)
+        db::write_to_file(&state_guard.matches, &CONFIG.database.path)
             .await
             .unwrap_or_else(|e| println!("Error writing to db: {}", e));
     }

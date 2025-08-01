@@ -15,7 +15,8 @@ use tower_http::services::ServeDir;
 use utoipa::{OpenApi, ToSchema};
 use utoipa_swagger_ui::SwaggerUi;
 
-use crate::{AppState, LastResult, Matchup, files, glicko, settings};
+use crate::settings::CONFIG;
+use crate::{AppState, LastResult, Matchup, files, glicko};
 
 #[derive(OpenApi)]
 #[openapi(
@@ -109,9 +110,9 @@ pub fn create_matchup_update_message(
 ) -> String {
     let winner = if let Some(m) = last_match {
         if m.players.0.won {
-            settings::P1
+            CONFIG.players.p1_id.as_str()
         } else {
-            settings::P2
+            CONFIG.players.p2_id.as_str()
         }
     } else {
         ""

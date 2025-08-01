@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::fs::{self, OpenOptions};
 use std::io;
+use std::panic;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow, bail};
@@ -15,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use walkdir::WalkDir;
 
-use crate::settings;
+use crate::settings::{self, CONFIG};
 
 pub const CHARACTER_COUNT: usize = 26;
 const NO_HANDICAP: u8 = 9;
@@ -246,15 +247,25 @@ pub fn read_replay(file_path: &str) -> Result<peppi::game::immutable::Game> {
     let file = fs::File::open(file_path)
         .with_context(|| format!("Failed to open file '{}'", file_path))?;
 
-    slippi::read(
-        &mut io::BufReader::new(file),
-        Some(&peppi::io::slippi::de::Opts {
-            skip_frames: false,
-            compute_hash: true,
-            debug: None,
-        }),
-    )
-    .with_context(|| format!("Failed to parse '{}'", file_path))
+    let result = panic::catch_unwind(|| {
+        slippi::read(
+            &mut io::BufReader::new(file),
+            Some(&peppi::io::slippi::de::Opts {
+                skip_frames: false,
+                compute_hash: true,
+                debug: None,
+            }),
+        )
+    });
+
+    match result {
+        Ok(Ok(game)) => Ok(game),
+        Ok(Err(err)) => Err(err).with_context(|| format!("Failed to parse '{}'", file_path)),
+        Err(_) => Err(anyhow::anyhow!(
+            "Parser panicked while reading '{}'",
+            file_path
+        )),
+    }
 }
 
 pub fn parse_replay(game: peppi::game::immutable::Game) -> Result<Match> {
@@ -285,14 +296,21 @@ pub fn parse_replay(game: peppi::game::immutable::Game) -> Result<Match> {
 
     let game_end = game.end().as_ref().context("Match end data is missing")?;
 
-    let r_presses = count_r_presses(&game).context("Failed to count R presses")?;
+    if game.start.players.len() != 2 {
+        bail!("Replay does not have 2 players");
+    }
 
-    let max_index = r_presses
-        .iter()
-        .enumerate()
-        .max_by_key(|&(_, val)| val)
-        .map(|(idx, _)| idx)
-        .context("R press vector is empty")?;
+    // fixme
+    let mut max_index = 0;
+    if !is_online {
+        max_index = count_r_presses(&game)
+            .context("Failed to count R presses")?
+            .iter()
+            .enumerate()
+            .max_by_key(|&(_, val)| val)
+            .map(|(idx, _)| idx)
+            .context("R press vector is empty")?;
+    }
 
     let players = game
         .start
@@ -436,7 +454,8 @@ pub fn find_replay_directory() -> Option<PathBuf> {
     let date_pattern = Regex::new(r"^\d{4}-\d{2}$").unwrap();
     let mut latest_dir = PathBuf::new();
 
-    let slippi_path = find_slippi_directory()?;
+    // let slippi_path = find_slippi_directory()?;
+    let slippi_path = PathBuf::from(&CONFIG.directory.slippi);
 
     if let Ok(entries) = fs::read_dir(&slippi_path) {
         for entry in entries.filter_map(|e| e.ok()) {

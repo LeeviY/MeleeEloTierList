@@ -1,0 +1,17 @@
+[players]
+p1_id = "LY＃863"
+p2_id = "KEKW＃849"
+
+[directory]
+slippi = "C:\\Users\\<User>\\Documents\\Slippi"
+extra = []
+
+[database]
+path = "db.bc"
+
+[rating]
+min_frames = 1800
+rating_window = 100
+
+[debug]
+update_db = true
