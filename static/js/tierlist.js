@@ -25,6 +25,7 @@ const CHARACTERS = [
     "ROY",
     "PICHU",
     "GANONDORF",
+    "MR_AVERAGE",
 ];
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -81,6 +82,18 @@ socket.onmessage = (event) => {
 function updateTierList(data) {
     _tierList = data;
     console.log("data:", data);
+
+    const calcAvg = (arr, key) => arr.reduce((sum, char) => sum + char[key], 0) / arr.length;
+    const addAvg = (arr) =>
+        arr.push({
+            rating: calcAvg(arr, "rating"),
+            rd: calcAvg(arr, "rd"),
+            volatility: calcAvg(arr, "volatility"),
+            matches: Math.round(calcAvg(arr, "matches")),
+        });
+    addAvg(data.P1);
+    addAvg(data.P2);
+
     renderPlayerTierList("P1", data.P1);
     renderPlayerTierList("P2", data.P2);
     const ratings = data.P1.map((obj) => obj.rating).concat(data.P2.map((obj) => obj.rating));
