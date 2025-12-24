@@ -54,6 +54,7 @@ const colors = [
     "#571700",
     "#3d2300",
     "#584628",
+    "#ffffff",
 ];
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -67,10 +68,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     const ratings = latest_ratings.P1.map((obj) => obj.rating).concat(
         latest_ratings.P2.map((obj) => obj.rating)
     );
-    const maxRaiting = Math.max(...ratings);
-    const minRaiting = Math.min(...ratings);
+    const maxRating = Math.max(...ratings);
+    const minRating = Math.min(...ratings);
 
-    console.log(minRaiting, maxRaiting);
+    console.log(minRating, maxRating);
 
     const p1Characters = latest_ratings.P1.map((obj, i) => {
         return { src: `/static/images/${CHARACTERS[i]}.png`, value: obj.rating };
@@ -82,8 +83,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
     p2Characters.sort((a, b) => a.value - b.value);
 
-    addImagesToLine("line1", p1Characters, minRaiting, maxRaiting);
-    addImagesToLine("line2", p2Characters, minRaiting, maxRaiting);
+    addImagesToLine("line1", p1Characters, minRating, maxRating);
+    addImagesToLine("line2", p2Characters, minRating, maxRating);
 
     renderRatingProgression(data.ratings, "P1");
     renderRatingProgression(data.ratings, "P2");
@@ -122,6 +123,30 @@ function renderRatingProgression(ratings, playerId) {
         })),
     }));
 
+    // Add average line
+    const averageLine = {
+        id: CHARACTERS.length,
+        values: ratings.map((entry, roundIndex) => {
+            const avgRating =
+                entry[playerId].reduce((sum, obj) => sum + obj.rating, 0) / entry[playerId].length;
+            return {
+                ratingPeriod: roundIndex,
+                rating: avgRating,
+            };
+        }),
+    };
+    playerLines.push(averageLine);
+
+    // Calculate trend line for average
+    const n = averageLine.values.length;
+    const sumX = averageLine.values.reduce((sum, d) => sum + d.ratingPeriod, 0);
+    const sumY = averageLine.values.reduce((sum, d) => sum + d.rating, 0);
+    const sumXY = averageLine.values.reduce((sum, d) => sum + d.ratingPeriod * d.rating, 0);
+    const sumX2 = averageLine.values.reduce((sum, d) => sum + d.ratingPeriod ** 2, 0);
+
+    const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX ** 2);
+    const intercept = (sumY - slope * sumX) / n;
+
     const x = d3
         .scaleLinear()
         .domain([0, ratingPeriods - 1])
@@ -147,7 +172,7 @@ function renderRatingProgression(ratings, playerId) {
         .y((d) => y(d.rating));
 
     const maskKey = `${playerId}CharacterMask`;
-    let characterMask = JSON.parse(localStorage.getItem(maskKey)) || Array(26).fill(true);
+    let characterMask = JSON.parse(localStorage.getItem(maskKey)) || Array(27).fill(true);
 
     g.selectAll(".player-line")
         .data(playerLines)
@@ -160,6 +185,18 @@ function renderRatingProgression(ratings, playerId) {
         .attr("stroke-width", 1.5)
         .attr("d", (d) => line(d.values))
         .style("display", (d) => (characterMask[d.id] === false ? "none" : null));
+
+    g.append("line")
+        .attr("class", "trend-line")
+        .attr("x1", x(0))
+        .attr("y1", y(intercept))
+        .attr("x2", x(ratingPeriods - 1))
+        .attr("y2", y(slope * (ratingPeriods - 1) + intercept))
+        .attr("stroke", colors[CHARACTERS.length])
+        .attr("stroke-width", 2)
+        .attr("stroke-dasharray", "5,5")
+        .style("opacity", 0.8)
+        .style("display", characterMask[CHARACTERS.length] === false ? "none" : null);
 
     const legend = svg
         .append("g")
@@ -209,5 +246,5 @@ function renderRatingProgression(ratings, playerId) {
         .style("font-size", "8px")
         .style("fill", "white")
         .style("opacity", (d) => (characterMask[d.id] === false ? 0.3 : 1))
-        .text((d) => CHARACTERS[d.id]);
+        .text((d) => CHARACTERS[d.id] || "AVERAGE");
 }
